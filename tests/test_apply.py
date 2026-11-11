@@ -30,7 +30,7 @@ def pdf(browser, profile, job, tmp_path):
     return path
 
 
-def run(browser, fixture, profile, job, pdf, llm=None, dry=False, html=None):
+def run(browser, fixture, profile, job, pdf, llm=None, dry=False, html=None, cover=None):
     ctx = browser.new_context()
     url = "file://" + os.path.join(FIX, fixture or "")
     if html is not None:
@@ -46,7 +46,7 @@ def run(browser, fixture, profile, job, pdf, llm=None, dry=False, html=None):
         return p
 
     ctx.new_page = new_page
-    outcome = apply_to(ctx, job, profile, pdf, CFG, llm, dry, url=url)
+    outcome = apply_to(ctx, job, profile, pdf, CFG, llm, dry, url=url, cover=cover)
     data = None
     if pages and pages[0].locator("#data").count():
         data = json.loads(pages[0].locator("#data").inner_text())
@@ -103,3 +103,14 @@ def test_captcha_is_handed_to_human(browser, profile, job, pdf):
 def test_missing_form_is_error(browser, profile, job, pdf):
     outcome, _ = run(browser, None, profile, job, pdf, html="<html><body><h1>This job is closed</h1></body></html>")
     assert outcome.status == "error"
+
+
+def test_cover_letter_is_uploaded(browser, profile, job, pdf, tmp_path):
+    from jobbot.cover import cover_letter
+    from jobbot.render import render_letter_pdf
+    tailored, _ = tailor(profile, job, None)
+    text, by_llm = cover_letter(profile, tailored, job, None)
+    letter = render_letter_pdf(browser, tailored, text, str(tmp_path / "Jane_Doe_Cover_Letter.pdf"))
+    assert not by_llm and open(letter, "rb").read(5) == b"%PDF-"
+    outcome, data = run(browser, "greenhouse_like.html", profile, job, pdf, FakeLLM("Because."), cover=(letter, text))
+    assert outcome.status == "submitted" and data["cover"] == 1 and data["resume"] == "Jane_Doe_Resume.pdf"

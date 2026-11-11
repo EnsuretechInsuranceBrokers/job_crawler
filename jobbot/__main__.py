@@ -12,13 +12,14 @@ from .util import detail, log
 def run(args):
     from playwright.sync_api import sync_playwright
 
-    from . import report
+    from . import notify, report
+    from .cover import cover_letter
     from .apply import apply_to, apply_url
     from .config import ROOT, load_config, load_profile
     from .llm import LLM
     from .match import select
     from .models import Outcome
-    from .render import render_pdf
+    from .render import render_letter_pdf, render_pdf
     from .sources import crawl
     from .state import State
     from .tailor import tailor
@@ -56,6 +57,7 @@ def run(args):
 
     results = []
     file_name = re.sub(r"\W+", "_", profile["name"]).strip("_") + "_Resume.pdf"
+    letter_name = file_name.replace("_Resume.pdf", "_Cover_Letter.pdf")
     with sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=os.environ.get("JOBBOT_CHROMIUM") or None)
         context = browser.new_context(locale="en-US", viewport={"width": 1280, "height": 1600})
@@ -67,7 +69,11 @@ def run(args):
                 job_dir = os.path.join(out_dir, f"{n:02d}_" + re.sub(r"\W+", "_", job.company)[:30])
                 os.makedirs(job_dir, exist_ok=True)
                 pdf = render_pdf(browser, tailored, os.path.join(job_dir, file_name))
-                outcome = apply_to(context, job, profile, pdf, acfg, llm, dry) if auto else \
+                letter, _ = cover_letter(profile, tailored, job, llm)
+                with open(os.path.join(job_dir, "cover_letter.txt"), "w") as f:
+                    f.write(letter)
+                letter_pdf = render_letter_pdf(browser, tailored, letter, os.path.join(job_dir, letter_name))
+                outcome = apply_to(context, job, profile, pdf, acfg, llm, dry, cover=(letter_pdf, letter)) if auto else \
                     Outcome("manual", "site is not auto-appliable")
             except Exception as e:  # noqa: BLE001
                 outcome = Outcome("error", type(e).__name__)
@@ -75,6 +81,7 @@ def run(args):
             results.append((job, outcome, pdf, used_llm))
             if not dry:
                 state.record(job, outcome.status)
+                notify.alert(profile, job, outcome)
                 if auto and n < len(chosen):
                     time.sleep(acfg.get("delay_seconds", 20))
         browser.close()
@@ -94,6 +101,8 @@ def run(args):
         if not dry:
             state.save()
         report.encrypt_zip(out_dir, profile["state_key"])
+        if notify.daily_log(profile, results, dry, sum(1 for r in results if r[3])):
+            log("whatsapp log sent")
         if profile.get("smtp") and results:
             try:
                 report.send_email(profile["smtp"], text, results, summary)

@@ -137,3 +137,46 @@ def test_crawl_survives_bad_source(monkeypatch):
     monkeypatch.setattr(sources, "_get", boom)
     monkeypatch.setattr(sources.time, "sleep", lambda s: None)
     assert sources.crawl({"greenhouse": ["x"], "remotive": True}) == []
+
+
+def test_cover_letter_template_and_llm_guard(profile, job):
+    from jobbot.cover import cover_letter
+    tailored, _ = tailor(profile, job, None)
+    text, by_llm = cover_letter(profile, tailored, job, None)
+    assert not by_llm and text.startswith("Dear Initech hiring team,") and text.endswith("Sincerely,\nJane Doe")
+    assert "Senior Backend Engineer" in text and "Kafka" in text
+    job.named = False
+    assert cover_letter(profile, tailored, job, None)[0].startswith("Dear hiring team,")
+    job.named = True
+    body = ("I have spent six years building Python services on AWS, including a payment reconciliation pipeline "
+            "with Kafka that cut settlement delays dramatically. " * 3)
+    honest = f"Dear Initech hiring team,\n\n{body}\n\nThe Senior Backend Engineer role fits that work.\n\nSincerely,\nJane Doe"
+    assert cover_letter(profile, tailored, job, FakeLLM(honest)) == (honest, True)
+    lying = honest.replace("Python services", "Rust and Elixir services")
+    assert cover_letter(profile, tailored, job, FakeLLM(lying))[1] is False
+    assert cover_letter(profile, tailored, job, FakeLLM(honest.replace("six years", "15 years")))[1] is False
+
+
+def test_whatsapp_log_and_alert(monkeypatch, profile, job):
+    from jobbot import notify
+    from jobbot.models import Outcome
+    sent = []
+
+    class Resp:
+        status_code = 200
+
+    monkeypatch.setattr(notify.requests, "get", lambda url, timeout, params: sent.append(params) or Resp())
+    assert notify.daily_log(profile, [], False, 0) is False  # not configured -> silent no-op
+    profile["whatsapp"] = {"phone": "+1 555 010 0199", "apikey": "k"}
+    assert notify.alert(profile, job, Outcome("captcha"))
+    assert sent[0]["phone"] == "+15550100199" and "CAPTCHA" in sent[0]["text"] and job.url in sent[0]["text"]
+    assert not notify.alert(profile, job, Outcome("submitted"))
+    results = [(job, Outcome("submitted"), None, True), (job, Outcome("needs_answers", unanswered=["Shoe size?"]), None, False)]
+    sent.clear()
+    assert notify.daily_log(profile, results, False, 1)
+    text = "\n".join(p["text"] for p in sent)
+    assert "Submitted: 1 | Need you: 1" in text and "Shoe size?" in text and job.url in text
+    sent.clear()
+    many = [(job, Outcome("manual"), None, False)] * 80
+    notify.daily_log(profile, many, True, 0)
+    assert len(sent) == 4 and all(len(p["text"]) < 1000 for p in sent) and "DRY RUN" in sent[0]["text"]

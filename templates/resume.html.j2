@@ -43,7 +43,7 @@
 {% if p.projects %}<h2>Projects</h2>
 {% for pr in p.projects %}
 <div class="entry">
-  <div class="row"><span class="role">{{ pr.name }}</span>{% if pr.link %}<span class="meta">{{ pr.link | replace("https://", "") }}</span>{% endif %}</div>
+  <div class="row"><span><span class="role">{{ pr.name }}</span>{% if pr.tagline %} — {{ pr.tagline }}{% endif %}</span>{% if pr.link %}<span class="meta">{{ pr.link | replace("https://", "") }}</span>{% endif %}</div>
   {% if pr.bullets %}<ul>{% for b in pr.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
 </div>
 {% endfor %}{% endif %}
@@ -51,6 +51,7 @@
 {% if p.education %}<h2>Education</h2>
 {% for ed in p.education %}
 <div class="row"><span><span class="role">{{ ed.degree }}</span>{% if ed.school %} — {{ ed.school }}{% endif %}</span><span class="meta">{{ ed.year }}</span></div>
+{% if ed.details %}<p>{{ ed.details }}</p>{% endif %}
 {% endfor %}{% endif %}
 </body>
 </html>

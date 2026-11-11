@@ -78,7 +78,13 @@ answers:
   "previously (worked|been employed)|former employee|worked (for|at) .* before": "No"
   "gender|race|ethnic|hispanic|veteran|disabilit|pronoun|sexual orientation|transgender": "decline"
 
-# Optional: email yourself the report + tailored PDFs after each run.
+# Optional: WhatsApp alerts (CAPTCHA / verification needed) and a daily log,
+# sent through the free CallMeBot service. Activate once - see README.
+# whatsapp:
+#   phone: "+15550100199"     # with country code
+#   apikey: "1234567"         # the key CallMeBot sends you
+
+# Optional: email yourself the report + tailored resumes and cover letters after each run.
 # For Gmail use an app password. Remove this block to skip email.
 # smtp:
 #   host: smtp.gmail.com

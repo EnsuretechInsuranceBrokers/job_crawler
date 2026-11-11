@@ -222,8 +222,9 @@ def llm_answers(llm, questions, profile, job):
 
 
 class FormFiller:
-    def __init__(self, page, profile, job, resume_pdf, cfg, llm=None):
+    def __init__(self, page, profile, job, resume_pdf, cfg, llm=None, cover=None):
         self.page, self.profile, self.job, self.pdf = page, profile, job, resume_pdf
+        self.cover_pdf, self.cover_text = cover or (None, None)
         self.cfg, self.llm = cfg, llm
         self.done, self.filled, self.llm_used = set(), 0, []
 
@@ -292,7 +293,12 @@ class FormFiller:
             if re.search(r"resume|\bcv\b|curriculum", f["label"], re.I) and not re.search(r"cover", f["label"], re.I):
                 self.loc(f["jb"]).set_input_files(self.pdf, timeout=10000)
                 return True
+            if self.cover_pdf and re.search(r"cover", f["label"], re.I):
+                self.loc(f["jb"]).set_input_files(self.cover_pdf, timeout=10000)
+                return True
             return False
+        if f["kind"] == "textarea" and self.cover_text and re.search(r"cover letter", f["label"], re.I):
+            return self.put(f, self.cover_text)
         if f["kind"] == "checkbox" and f["required"] and self.cfg.get("accept_consent", True) and CONSENT.search(f["label"]):
             self._tick(f["jb"])
             return True
@@ -352,7 +358,7 @@ def _text(page):
         return ""
 
 
-def apply_to(context, job, profile, resume_pdf, cfg, llm=None, dry_run=True, url=None):
+def apply_to(context, job, profile, resume_pdf, cfg, llm=None, dry_run=True, url=None, cover=None):
     """Open the job's form, fill it, and submit unless dry_run. Returns an Outcome."""
     url = url or apply_url(job)
     if not url:
@@ -365,7 +371,7 @@ def apply_to(context, job, profile, resume_pdf, cfg, llm=None, dry_run=True, url
             page.wait_for_load_state("networkidle", timeout=8000)
         except Exception:  # noqa: BLE001
             pass
-        filler = FormFiller(page, profile, job, resume_pdf, cfg, llm)
+        filler = FormFiller(page, profile, job, resume_pdf, cfg, llm, cover)
         unanswered = filler.fill()
         detail(f"{job.company}: filled {filler.filled} fields, {len(unanswered)} required unanswered")
         if filler.filled < 2:

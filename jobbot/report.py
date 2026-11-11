@@ -22,7 +22,7 @@ def build(results, dry_run, out_dir):
 
     def row(job, outcome, pdf, _):
         rel = os.path.relpath(pdf, out_dir) if pdf else "-"
-        return f"- **{job.title}** - {job.company} ({job.location or 'n/a'}), score {job.score}\n  - {job.url}\n  - resume: `{rel}`"
+        return f"- **{job.title}** - {job.company} ({job.location or 'n/a'}), score {job.score}\n  - {job.url}\n  - files: `{os.path.dirname(rel)}/` (resume + cover letter)"
 
     if sent:
         lines += [f"## Submitted automatically ({len(sent)})", ""] + [row(*r) for r in sent] + [""]
@@ -73,11 +73,14 @@ def send_email(smtp, text, results, counts):
     for i, (job, outcome, pdf, _) in enumerate(results):
         if outcome.status in ("submitted", "dry_run_ok") or not pdf or size > 15e6:
             continue
-        with open(pdf, "rb") as f:
-            data = f.read()
-        size += len(data)
         safe = "".join(c if c.isalnum() else "_" for c in job.company)[:30]
-        msg.add_attachment(data, maintype="application", subtype="pdf", filename=f"{i + 1:02d}_{safe}.pdf")
+        for fn in sorted(os.listdir(os.path.dirname(pdf))):
+            if fn.endswith(".pdf"):
+                with open(os.path.join(os.path.dirname(pdf), fn), "rb") as f:
+                    data = f.read()
+                size += len(data)
+                kind = "cover_letter" if "Cover" in fn else "resume"
+                msg.add_attachment(data, maintype="application", subtype="pdf", filename=f"{i + 1:02d}_{safe}_{kind}.pdf")
     port = int(smtp.get("port", 587))
     cls = smtplib.SMTP_SSL if port == 465 else smtplib.SMTP
     with cls(smtp["host"], port, timeout=60) as s:

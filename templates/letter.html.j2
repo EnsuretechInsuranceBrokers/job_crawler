@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{{ p.name }} - Cover Letter</title>
+<style>
+  body { font-family: Helvetica, Arial, "Liberation Sans", sans-serif; font-size: 11pt; line-height: 1.5; color: #1a1a1a; margin: 0; }
+  h1 { font-size: 17pt; margin: 0 0 2pt; }
+  .contact { font-size: 9.5pt; color: #444; margin-bottom: 22pt; border-bottom: 1px solid #999; padding-bottom: 8pt; }
+  p { margin: 0 0 10pt; white-space: pre-line; }
+</style></head>
+<body>
+<h1>{{ p.name }}</h1>
+<div class="contact">{{ [p.email, p.phone, p.location] | select | join(" · ") }}</div>
+{% for para in paragraphs %}<p>{{ para }}</p>{% endfor %}
+</body></html>

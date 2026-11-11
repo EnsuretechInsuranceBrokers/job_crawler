@@ -29,6 +29,10 @@ def _ts(value):
         return 0.0
 
 
+def _pretty(board):
+    return board.replace("-", " ").replace("_", " ").title()
+
+
 def _is_remote(*texts):
     return any("remote" in (t or "").lower() for t in texts)
 
@@ -37,9 +41,9 @@ def greenhouse(board):
     data = _get(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true")
     for j in data.get("jobs", []):
         loc = (j.get("location") or {}).get("name", "")
-        yield Job("greenhouse", str(j["id"]), j.get("company_name") or board, j["title"].strip(), loc,
+        yield Job("greenhouse", str(j["id"]), j.get("company_name") or _pretty(board), j["title"].strip(), loc,
                   j.get("absolute_url", ""), strip_html(j.get("content", "")), _is_remote(loc, j["title"]),
-                  _ts(j.get("first_published") or j.get("updated_at")), board)
+                  _ts(j.get("first_published") or j.get("updated_at")), board, named=bool(j.get("company_name")))
 
 
 def lever(board):
@@ -49,8 +53,8 @@ def lever(board):
         parts = [j.get("descriptionPlain", "")]
         parts += [f"{x.get('text', '')}\n{strip_html(x.get('content', ''))}" for x in j.get("lists", [])]
         parts.append(j.get("additionalPlain", ""))
-        yield Job("lever", j["id"], board, j["text"].strip(), loc, j.get("hostedUrl", ""), "\n".join(parts),
-                  _is_remote(loc, j.get("workplaceType")), _ts(j.get("createdAt")), board)
+        yield Job("lever", j["id"], _pretty(board), j["text"].strip(), loc, j.get("hostedUrl", ""), "\n".join(parts),
+                  _is_remote(loc, j.get("workplaceType")), _ts(j.get("createdAt")), board, named=False)
 
 
 def ashby(board):
@@ -59,9 +63,9 @@ def ashby(board):
         if j.get("isListed") is False:
             continue
         loc = j.get("location", "") or ""
-        yield Job("ashby", j["id"], board, j["title"].strip(), loc, j.get("jobUrl", ""),
+        yield Job("ashby", j["id"], _pretty(board), j["title"].strip(), loc, j.get("jobUrl", ""),
                   j.get("descriptionPlain") or strip_html(j.get("descriptionHtml", "")),
-                  bool(j.get("isRemote")) or _is_remote(loc), _ts(j.get("publishedAt")), board)
+                  bool(j.get("isRemote")) or _is_remote(loc), _ts(j.get("publishedAt")), board, named=False)
 
 
 def remotive(_=None):

@@ -34,22 +34,32 @@ def _keyword_plan(profile, job_norm):
     return {"skills": skills, "bullets": bullets, "summary": profile.get("summary", "")}
 
 
-def _summary_ok(summary, profile, job):
-    """Reject a summary that introduces capitalised/technical job terms absent from the profile."""
-    if not summary or len(summary) > 600:
+NEUTRAL = {"i", "dear", "sincerely", "hiring", "team", "manager", "regards", "best", "thank", "yours"}
+
+
+def grounded(text, profile, job, max_len=600, letter=False):
+    """True if `text` introduces no job-posting term, company or number that the profile lacks.
+
+    Flags technical-looking words (mid-sentence capitals, digits, + # .) that occur in the
+    posting but nowhere in the profile - the signature of a claimed skill the person lacks.
+    """
+    if not text or len(text) > max_len:
         return False
     profile_norm = norm(json.dumps(profile, default=str))
-    if has_term(job.company, norm(summary)) and not has_term(job.company, profile_norm):
+    allowed = set(norm(job.title).split()) | NEUTRAL
+    if letter and job.named:
+        allowed |= set(norm(job.company).split())
+    elif has_term(job.company, norm(text)) and not has_term(job.company, profile_norm):
         return False
     job_norm = norm(job.title + " " + job.description)
-    for word in set(re.findall(r"[A-Za-z][A-Za-z0-9+#.]{1,}", summary)):
-        techy = word[0].isupper() or any(c in word for c in "+#.") or any(c.isdigit() for c in word)
-        if techy and not has_term(word, profile_norm) and has_term(word, job_norm):
+    for m in re.finditer(r"[A-Za-z][A-Za-z0-9+#.]*[A-Za-z0-9+#]", text):
+        word = m.group()
+        before = text[:m.start()].rstrip()
+        starts_sentence = not before or before[-1] in ".!?:\n,"
+        techy = (word[0].isupper() and not starts_sentence) or any(c in word for c in "+#.") or any(c.isdigit() for c in word)
+        if techy and norm(word) not in allowed and not has_term(word, profile_norm) and has_term(word, job_norm):
             return False
-    for number in re.findall(r"\d+", summary):
-        if number not in profile_norm:
-            return False
-    return True
+    return all(number in profile_norm for number in re.findall(r"\d+", text))
 
 
 def tailor(profile, job, llm=None):
@@ -94,6 +104,6 @@ def _merge(plan, reply, profile, job):
         if len(ids) >= min(2, n):
             plan["bullets"][str(i)], used = ids, True
     summary = reply.get("summary")
-    if isinstance(summary, str) and _summary_ok(summary.strip(), profile, job):
+    if isinstance(summary, str) and grounded(summary.strip(), profile, job):
         plan["summary"], used = summary.strip(), True
     return used

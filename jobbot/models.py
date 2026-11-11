@@ -14,6 +14,7 @@ class Job:
     posted: float = 0.0    # unix seconds, 0 = unknown
     board: str = ""        # ATS board token, when known
     score: float = 0.0
+    named: bool = True     # False when `company` is only a board token, not a display name
 
     @property
     def key(self):
