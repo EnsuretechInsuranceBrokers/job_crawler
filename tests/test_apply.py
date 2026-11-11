@@ -49,6 +49,8 @@ def run(browser, fixture, profile, job, pdf, llm=None, dry=False, html=None, cov
     outcome = apply_to(ctx, job, profile, pdf, CFG, llm, dry, url=url, cover=cover)
     data = None
     if pages and pages[0].locator("#data").count():
+        # the confirmation page fills #data from a script: wait for it rather than race it
+        pages[0].wait_for_function("document.querySelector('#data').textContent.trim().length > 1", timeout=10000)
         data = json.loads(pages[0].locator("#data").inner_text())
     ctx.close()
     return outcome, data

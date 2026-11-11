@@ -324,3 +324,25 @@ def test_llm_tries_endpoints_until_one_answers(monkeypatch):
     assert [u.split("/")[3] for u, _ in seen] == ["inference", "orgs"]
     seen.clear()
     assert bot.ask("s", "u", as_json=True) == {"ok": True} and len(seen) == 1  # remembers the working endpoint
+
+
+def test_workflow_files_are_valid():
+    """A mis-indented workflow fails silently on GitHub; catch it here."""
+    import glob
+
+    import yaml
+    from jobbot.config import ROOT
+    files = glob.glob(os.path.join(ROOT, ".github", "workflows", "*.yml"))
+    assert len(files) >= 3
+    for path in files:
+        wf = yaml.safe_load(open(path))
+        assert wf.get("jobs"), path
+        for name, job in wf["jobs"].items():
+            assert job.get("runs-on") and job.get("steps"), f"{path}:{name}"
+            for step in job["steps"]:
+                assert ("run" in step) != ("uses" in step), f"{path}:{name}: {step}"
+                assert all(isinstance(v, str) for v in (step.get("env") or {}).values()), f"{path}:{name}"
+    # the bot must never be reachable from fork pull requests, which could read its secrets
+    for wf_name in ("jobbot.yml", "notify.yml"):
+        on = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", wf_name)))[True]
+        assert set(on) <= {"schedule", "workflow_dispatch"}, wf_name
