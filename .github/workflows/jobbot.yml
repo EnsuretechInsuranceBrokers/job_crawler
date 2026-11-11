@@ -26,13 +26,14 @@ jobs:
     timeout-minutes: 60
     env:
       PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
+      JOBBOT_KEY: ${{ secrets.JOBBOT_KEY }}
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Check setup
         id: setup
         run: |
-          if [ -z "$PROFILE_YAML" ]; then
-            echo "::warning::PROFILE_YAML secret is not set - nothing to do. See README."
+          if [ -z "$PROFILE_YAML" ] && [ -z "$JOBBOT_KEY" ]; then
+            echo "::warning::Neither the JOBBOT_KEY nor the PROFILE_YAML secret is set - nothing to do. See README."
           else
             echo "ready=1" >> "$GITHUB_OUTPUT"
           fi

@@ -19,11 +19,15 @@ def load_profile(demo=False):
             text = f.read()
     elif os.environ.get("PROFILE_YAML", "").strip():
         text = os.environ["PROFILE_YAML"]
+    elif os.environ.get("JOBBOT_KEY", "").strip() and os.path.exists(os.path.join(ROOT, "profile.enc")):
+        from .seal import unseal
+        text = unseal(os.environ["JOBBOT_KEY"])  # encrypted profile committed to the repo
     elif os.path.exists(os.path.join(ROOT, "profile.yml")):
         with open(os.path.join(ROOT, "profile.yml")) as f:
             text = f.read()
     else:
-        raise SystemExit("No profile: set the PROFILE_YAML secret (see profile.example.yml) or run with --demo.")
+        raise SystemExit("No profile: commit profile.enc and set the JOBBOT_KEY secret, or set the PROFILE_YAML secret "
+                         "(see README), or run with --demo.")
     profile = yaml.safe_load(text)
     missing = [k for k in REQUIRED if not profile.get(k)]
     if missing:

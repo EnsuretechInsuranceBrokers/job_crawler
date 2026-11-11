@@ -8,14 +8,22 @@ sources:
   # jobs the bot tries to submit by itself. Add any company: the token is the
   # last part of its board URL (boards.greenhouse.io/<token>,
   # jobs.lever.co/<token>, jobs.ashbyhq.com/<token>). Dead tokens are skipped.
+  # The second group in each list are companies with engineering teams in India.
   greenhouse: [stripe, airbnb, discord, figma, databricks, cloudflare, gitlab,
                coinbase, robinhood, instacart, dropbox, twilio, datadog, mongodb,
                elastic, okta, pinterest, reddit, lyft, asana, brex, duolingo,
                affirm, anthropic, scaleai, airtable, vercel, samsara, gusto,
-               flexport]
-  lever: [palantir, spotify, mistral, veeva, outreach]
-  ashby: [ramp, notion, linear, openai, posthog, supabase, replit, deel, vanta,
-          elevenlabs, cohere, zapier]
+               flexport,
+               postman, phonepe, groww, razorpaysoftwareprivatelimited, druva,
+               rubrik, thoughtspot, hasura, innovaccer, browserstack, slice,
+               cohesity, zscaler, nutanix, sprinklr, tekion, chargebee, moengage,
+               clevertap, uniphore, observeai, mindtickle, whatfix, yellowai]
+  lever: [palantir, spotify, veeva, outreach,
+          cred, meesho, zepto, upstox, paytm, sharechat, spinny, dream11,
+          jupiter, khatabook, cars24, rapido, leadsquared, zeta]
+  ashby: [ramp, notion, linear, openai, posthog, supabase, replit, vanta,
+          elevenlabs, cohere, zapier,
+          atlan, plane, sarvam, portkey, composio, juspay, kreditbee]
   # Free aggregator APIs. Their jobs link to arbitrary sites, so matches are
   # tailored and put in your report for a manual click, not auto-submitted.
   remotive: true

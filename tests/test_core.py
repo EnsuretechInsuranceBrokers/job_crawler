@@ -177,6 +177,9 @@ def test_pick_option_ranges_consent_synonyms():
     assert pick_option("consent", [{"text": "Select..."}, {"text": "I agree"}]) == 1
     assert pick_option("consent", [{"text": "No"}, {"text": "Maybe"}]) is None
     assert pick_option("Male", [{"text": "Woman"}, {"text": "Man"}, {"text": "Non-binary"}]) == 1
+    heard = [{"text": "Careers Website"}, {"text": "LinkedIn"}, {"text": "Glassdoor"}, {"text": "Twilio Blog"}]
+    assert pick_option("Company careers page", heard) == 0
+    assert pick_option("A friend told me", heard) is None
 
 
 def test_remote_regions(profile):
@@ -267,3 +270,57 @@ def test_no_duplicate_applications(tmp_path, job):
                  Job("greenhouse", "555", "Initech", "Senior Backend Engineer", "Pune", "u", board="initech")):
         assert again.seen(twin), twin
     assert not again.seen(Job("greenhouse", "7", "Initech", "Data Engineer", "Pune", "u", board="initech"))
+
+
+def test_sealed_profile_roundtrip(tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from jobbot import config, seal
+    key = Fernet.generate_key().decode()
+    text = open(os.path.join(config.ROOT, "profile.example.yml")).read().replace("change-me-to-a-long-random-passphrase", "real-key")
+    sealed = tmp_path / "profile.enc"
+    sealed.write_bytes(Fernet(key.encode()).encrypt(text.encode()))
+    assert b"Jane" not in sealed.read_bytes()
+    assert seal.unseal(key, str(sealed)) == text
+    with pytest.raises(SystemExit):
+        seal.unseal(Fernet.generate_key().decode(), str(sealed))
+    monkeypatch.setattr(config, "ROOT", str(tmp_path))
+    monkeypatch.setattr(seal, "SEALED", str(sealed))
+    monkeypatch.delenv("PROFILE_YAML", raising=False)
+    monkeypatch.setenv("JOBBOT_KEY", key)
+    monkeypatch.setattr(seal, "unseal", lambda k, path=str(sealed), _u=seal.unseal: _u(k, path))
+    assert config.load_profile()["name"] == "Jane Doe"
+
+
+def test_llm_tries_endpoints_until_one_answers(monkeypatch):
+    from jobbot import llm as llm_mod
+    seen = []
+
+    class Resp:
+        def __init__(self, status, text, payload=None):
+            self.status_code, self.text, self.payload, self.headers = status, text, payload, {}
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise llm_mod.requests.HTTPError("x")
+
+        def json(self):
+            if self.payload is None:
+                raise json.JSONDecodeError("x", "", 0)
+            return self.payload
+
+    def post(url, json, timeout, headers, allow_redirects):
+        seen.append((url, json["model"]))
+        assert allow_redirects is False
+        if "/orgs/" in url:
+            return Resp(200, "", {"choices": [{"message": {"content": '```json\n{"ok": true}\n```'}}]})
+        return Resp(200, "OK\r\n")
+
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "acme")
+    monkeypatch.setattr(llm_mod.requests, "post", post)
+    bot = llm_mod.LLM({"enabled": True, "model": "openai/gpt-4o-mini"})
+    assert bot.ask("s", "u", as_json=True) == {"ok": True}
+    assert [u.split("/")[3] for u, _ in seen] == ["inference", "orgs"]
+    seen.clear()
+    assert bot.ask("s", "u", as_json=True) == {"ok": True} and len(seen) == 1  # remembers the working endpoint

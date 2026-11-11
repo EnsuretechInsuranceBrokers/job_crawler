@@ -24,15 +24,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -q requests PyYAML
+      - run: pip install -q requests PyYAML cryptography
       - name: Send
         env:
           PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
+          JOBBOT_KEY: ${{ secrets.JOBBOT_KEY }}
+      JOBBOT_KEY: ${{ secrets.JOBBOT_KEY }}
           MESSAGE: ${{ inputs.message }}
         run: |
           python - <<'PY'
-          import os, sys, yaml
+          import os, sys
+          from jobbot.config import load_profile
           from jobbot.notify import send
-          profile = yaml.safe_load(os.environ.get("PROFILE_YAML") or "") or {}
+          profile = load_profile()
           sys.exit(0 if send(profile, os.environ["MESSAGE"]) else "no notification channel is configured, or the message was rejected")
           PY

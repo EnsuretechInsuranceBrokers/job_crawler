@@ -249,7 +249,14 @@ def pick_option(answer, options):
             return hits[0]
         if hits:
             return None  # ambiguous: do not guess
-    return None
+    # Last resort: one option clearly shares more meaningful words than any other
+    # ("Company careers page" -> "Careers Website").
+    def words(t):
+        return {w.rstrip("s") for w in t.split() if len(w) > 3}
+    mine = words(a)
+    scores = [len(mine & words(t)) for t in texts]
+    best = max(scores, default=0)
+    return scores.index(best) if best and scores.count(best) == 1 else None
 
 
 LLM_SYSTEM = """You fill in a job application for the candidate below. Answer each question ONLY from the candidate's facts.
@@ -307,10 +314,18 @@ class FormFiller:
         if norm(answer) in ("decline", "consent"):
             self.page.keyboard.press("Escape")
             return False
-        box.fill(answer[:60])
-        self.page.wait_for_timeout(1200)
-        if choose() or (opts.count() and (opts.first.click() or True)):
-            return True
+        # Autocomplete (city, school, ...): type, wait for suggestions, take the best one.
+        # Try the full answer, then just its first part ("Austin, TX, United States" -> "Austin").
+        for typed in dict.fromkeys([answer[:60], answer.split(",")[0].strip()[:60]]):
+            box.fill(typed)
+            for _ in range(8):
+                self.page.wait_for_timeout(500)
+                if opts.count():
+                    break
+            if opts.count():
+                if not choose():
+                    opts.first.click()
+                return True
         self.page.keyboard.press("Escape")
         box.fill("")
         return False
