@@ -346,3 +346,43 @@ def test_workflow_files_are_valid():
     for wf_name in ("jobbot.yml", "notify.yml"):
         on = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", wf_name)))[True]
         assert set(on) <= {"schedule", "workflow_dispatch"}, wf_name
+
+
+def test_github_inbox_keeps_details_private(monkeypatch, profile, job, tmp_path):
+    from jobbot import notify
+    from jobbot.models import Outcome
+    posts = []
+
+    class Resp:
+        def __init__(self, status, payload):
+            self.status_code, self.payload = status, payload
+
+        def json(self):
+            return self.payload
+
+    monkeypatch.setattr(notify.requests, "get",
+                        lambda url, **kw: Resp(200, {"state": "open"} if url.endswith("/issues/7") else []))
+
+    def post(url, **kw):
+        posts.append((url, kw["json"]))
+        return Resp(201, {"number": 7})
+
+    monkeypatch.setattr(notify.requests, "post", post)
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "me/repo")
+    monkeypatch.setenv("GITHUB_RUN_ID", "99")
+    profile.pop("smtp", None)
+    state = State(str(tmp_path / "s.enc"), "k")
+    results = [(job, Outcome("submitted"), None, True), (job, Outcome("captcha"), None, False)]
+    assert notify.daily_log(profile, results, False, 1, state)
+    assert posts[0][0].endswith("/repos/me/repo/issues") and posts[0][1]["title"] == "jobbot inbox"
+    comment = posts[1][1]["body"]
+    assert posts[1][0].endswith("/issues/7/comments") and state.meta["inbox_issue"] == 7
+    assert comment.startswith("@janedoe-example ") and "submitted 1, need you 1 (1 captcha)" in comment
+    assert "/actions/runs/99" in comment
+    assert "Initech" not in comment and job.url not in comment and job.title not in comment
+    assert notify.alert(profile, job, Outcome("captcha"), state=state)
+    assert "needs you now" in posts[-1][1]["body"] and "Initech" not in posts[-1][1]["body"]
+    profile["github_inbox"] = {"details": True}
+    notify.alert(profile, job, Outcome("captcha"), state=state)
+    assert "Initech" in posts[-1][1]["body"]

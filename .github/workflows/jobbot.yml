@@ -15,6 +15,7 @@ permissions:
   contents: write   # save encrypted state to the bot-state branch
   models: read      # free GitHub Models for tailoring
   actions: write    # keep the schedule alive
+  issues: write     # post the daily log / alerts to the "jobbot inbox" issue (GitHub emails them)
 
 concurrency:
   group: jobbot

@@ -1,6 +1,9 @@
 """Phone notifications: alerts when a form needs a human, and a daily log.
 
-Channels (use any, all are free; credentials live only in the PROFILE_YAML secret):
+Channels (all free; credentials live only in the encrypted profile):
+  github   - ON BY DEFAULT, needs no setup: the bot comments on a "jobbot inbox" issue and
+             GitHub emails you. The repo is public, so these comments carry counts only
+             unless you opt in to details.
   telegram - bot token from @BotFather; can also deliver the tailored PDFs
   ntfy     - push via the ntfy app, no account: just a secret topic name
   whatsapp - CallMeBot, when it has free slots
@@ -71,10 +74,49 @@ def _whatsapp(cfg, chunks):
         "phone": str(cfg["phone"]).replace(" ", ""), "apikey": str(cfg["apikey"]), "text": c}).status_code == 200 for c in chunks)
 
 
-def send(profile, text, files=(), state=None, max_messages=4):
-    """Send to every configured channel. Returns True if at least one accepted it."""
+def _github_inbox(cfg, profile, text, state):
+    """Comment on the repo's "jobbot inbox" issue; GitHub then emails the mentioned user."""
+    token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPOSITORY")
+    if not (token and repo):
+        return False
+    api = f"https://api.github.com/repos/{repo}/issues"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    user = cfg.get("user") or (profile.get("links", {}).get("github") or "").rstrip("/").split("/")[-1]
+    number = state.meta.get("inbox_issue") if state is not None else None
+    if number:  # reuse it only while it is still open
+        r = requests.get(f"{api}/{number}", headers=headers, timeout=30)
+        number = number if r.status_code == 200 and r.json().get("state") == "open" else None
+    if not number:
+        r = requests.get(api, headers=headers, timeout=30, params={"state": "open", "labels": "jobbot-inbox"})
+        found = r.json() if r.status_code == 200 else []
+        if found:
+            number = found[0]["number"]
+        else:
+            r = requests.post(api, headers=headers, timeout=30, json={
+                "title": "jobbot inbox", "labels": ["jobbot-inbox"],
+                "body": "The bot posts its daily log and alerts here so that GitHub emails them to you. "
+                        "Details stay in the encrypted report of each run. Close this issue to stop the emails."})
+            if r.status_code != 201:
+                return False
+            number = r.json()["number"]
+        if state is not None:
+            state.meta["inbox_issue"] = number
+    run = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repo}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
+    body = (f"@{user} " if user else "") + text + f"\n\nFull report (encrypted, password = your `state_key`): {run}"
+    return requests.post(f"{api}/{number}/comments", headers=headers, timeout=30, json={"body": body}).status_code == 201
+
+
+def send(profile, text, files=(), state=None, max_messages=4, public_text=None):
+    """Send to every configured channel. Returns True if at least one accepted it.
+
+    `public_text` is the version safe to post in the public repository (no job names).
+    """
     chunks = _chunks(text, max_messages)
     channels = []
+    gh = profile.get("github_inbox") or {}
+    if gh.get("enabled", True) and public_text:
+        shown = text if gh.get("details") else public_text
+        channels.append(("github inbox", lambda: _github_inbox(gh, profile, shown, state)))
     tg, nt, wa = (profile.get(k) or {} for k in ("telegram", "ntfy", "whatsapp"))
     if tg.get("token"):
         channels.append(("telegram", lambda: _telegram(tg, chunks, files, state)))
@@ -105,7 +147,7 @@ def alert(profile, job, outcome, files=(), state=None):
     if not what:
         return False
     text = f"jobbot: {what}\n{job.title} - {job.company}\nFinish here: {job.url}"
-    sent = send(profile, text, files, state)
+    sent = send(profile, text, files, state, public_text=f"**An application needs you now:** {what.lower()}.")
     if profile.get("smtp"):  # email carries the tailored PDFs, handy on a phone
         try:
             from .report import send_email
@@ -137,4 +179,10 @@ def daily_log(profile, results, dry_run, llm_count, state=None):
     if questions:
         lines += ["", "Add answers for:"] + [f"- {q[:90]}" for q in questions[:8]]
     lines += ["", f"Resumes tailored by AI: {llm_count}/{len(results)}"]
-    return send(profile, "\n".join(lines), state=state)
+    counts = {}
+    for _, o, *_ in todo:
+        counts[why.get(o.status, o.status)] = counts.get(why.get(o.status, o.status), 0) + 1
+    public = (f"**Daily log{' (dry run - nothing sent)' if dry_run else ''}:** submitted {len(sent)}, need you {len(todo)}"
+              + (f" ({', '.join(f'{v} {k}' for k, v in sorted(counts.items()))})" if counts else "")
+              + (f", ready when live {len(ready)}" if ready else "") + ".")
+    return send(profile, "\n".join(lines), state=state, public_text=public)

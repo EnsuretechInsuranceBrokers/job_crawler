@@ -68,9 +68,17 @@ Then:
 That is the only required manual input. Optional: phone alerts (below) and your
 own company lists in `config.yml`.
 
-### Phone alerts and daily log (2 minutes, once)
+### Notifications
 
-Pick any one (or several). All are free; the credentials go in `PROFILE_YAML`.
+**Works with no setup:** the bot keeps an issue called "jobbot inbox" in this
+repository and comments on it – the daily log after each run, and immediately
+when an application needs you. GitHub emails you each comment. Because the
+repository is public, comments contain counts only ("submitted 4, need you 2
+(1 captcha)") plus a link to the run's encrypted report; set
+`github_inbox: {details: true}` in your profile if you would rather have job
+titles and links right in the email.
+
+For richer alerts add any of these to your profile (all free):
 
 | Channel | Setup | Notes |
 |---|---|---|

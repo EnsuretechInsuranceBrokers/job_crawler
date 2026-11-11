@@ -82,6 +82,13 @@ answers:
   "previously (worked|been employed)|former employee|worked (for|at) .* before": "No"
   "gender|race|ethnic|hispanic|veteran|disabilit|pronoun|sexual orientation|transgender": "decline"
 
+# Notifications work with no setup: the bot comments on a "jobbot inbox" issue in
+# this repo and GitHub emails you. Because the repo is public those comments hold
+# counts only; set details: true to include job titles, companies and links.
+# github_inbox:
+#   enabled: true
+#   details: false
+
 # Optional: phone notifications - an alert when a form needs you (CAPTCHA,
 # verification code) and a daily log. Use any of these; setup is in the README.
 # telegram:
