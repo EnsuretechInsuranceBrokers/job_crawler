@@ -1,0 +1,88 @@
+# Copy this file, fill it in, and paste the WHOLE thing into one repository
+# secret named PROFILE_YAML (Settings -> Secrets and variables -> Actions).
+# Do NOT commit your real profile: this repository is public.
+
+# Any long random string. Encrypts the bot's memory and the report zip.
+state_key: "change-me-to-a-long-random-passphrase"
+
+name: Jane Doe
+email: jane.doe@example.com
+phone: "+1 555 010 0199"
+location: "Austin, TX, United States"
+links:
+  linkedin: https://www.linkedin.com/in/janedoe-example
+  github: https://github.com/janedoe-example
+  website: https://janedoe.example.com
+
+summary: >
+  Backend engineer with 6 years of experience building data-heavy Python and Go
+  services on AWS, from payment pipelines to internal developer platforms.
+
+skills: [Python, Go, PostgreSQL, AWS, Kubernetes, Docker, Terraform, Kafka,
+         Redis, REST APIs, gRPC, CI/CD, React, TypeScript]
+
+experience:
+  - title: Senior Software Engineer
+    company: Acme Payments
+    location: Austin, TX
+    start: "2021"
+    end: Present
+    bullets:
+      - Led the redesign of a payment reconciliation pipeline in Python and Kafka, cutting settlement delays from 6 hours to 20 minutes.
+      - Built a Go gRPC service handling 4k requests/second with p99 latency under 40 ms.
+      - Migrated 30 services to Kubernetes on AWS with Terraform, reducing infrastructure cost by 25%.
+      - Mentored four engineers and introduced design reviews for all cross-team changes.
+      - Added CI/CD checks that cut failed deployments by 60%.
+      - Built an internal React and TypeScript dashboard used by 50 support agents.
+  - title: Software Engineer
+    company: Globex Analytics
+    location: Remote
+    start: "2018"
+    end: "2021"
+    bullets:
+      - Developed REST APIs in Python backed by PostgreSQL serving 2M daily requests.
+      - Introduced Redis caching that cut median API latency by 45%.
+      - Containerised the legacy monolith with Docker and automated releases.
+
+education:
+  - degree: B.S. Computer Science
+    school: University of Texas at Austin
+    year: "2018"
+
+projects:
+  - name: pgslice-lite
+    link: https://github.com/janedoe-example/pgslice-lite
+    bullets:
+      - Open-source PostgreSQL partitioning helper written in Go.
+
+# What to look for. Stays private because it is part of the secret.
+search:
+  titles: [software engineer, backend engineer, platform engineer]  # all words of any phrase must be in the job title
+  exclude_titles: [intern, manager, director, principal, staff]
+  keywords: []            # extra terms to reward besides your skills
+  locations: [united states, austin]   # job location must contain one of these; [] = anywhere
+  remote_ok: true         # also accept jobs marked remote
+
+# Answers to application-form questions. Keys are case-insensitive regexes
+# matched against the question text; first match wins. Every question the bot
+# could not answer is listed in the report so you can add it here once.
+# "decline" picks the "prefer not to say" style option.
+answers:
+  "authori[sz]ed to work|legally (able|eligible|authori)|right to work": "Yes"
+  "sponsor": "No"
+  "salary|compensation|pay expectation": "Open to discussing; flexible for the right role"
+  "notice period|when can you start|start date|available to start": "4 weeks"
+  "years of .*experience": "6"
+  "how did you (hear|find)|where did you (hear|find)|source": "Company careers page"
+  "relocat": "Yes"
+  "previously (worked|been employed)|former employee|worked (for|at) .* before": "No"
+  "gender|race|ethnic|hispanic|veteran|disabilit|pronoun|sexual orientation|transgender": "decline"
+
+# Optional: email yourself the report + tailored PDFs after each run.
+# For Gmail use an app password. Remove this block to skip email.
+# smtp:
+#   host: smtp.gmail.com
+#   port: 587
+#   user: you@gmail.com
+#   password: "app-password"
+#   to: you@gmail.com

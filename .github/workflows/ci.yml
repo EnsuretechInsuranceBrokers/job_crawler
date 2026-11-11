@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: |
+          pip install -q -r requirements.txt pytest
+          playwright install --with-deps chromium
+      - run: python -m pytest -q
+
+  live-demo:
+    # Canary against the real job boards using the fake example profile.
+    # Fills real forms in dry-run mode and NEVER submits. Tells us when a site
+    # changes its markup. Allowed to fail without blocking anything.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: |
+          pip install -q -r requirements.txt
+          playwright install --with-deps chromium
+      - run: python -m jobbot --demo --limit 6
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

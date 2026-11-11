@@ -1,0 +1,91 @@
+name: jobbot
+
+on:
+  schedule:
+    - cron: "23 13 * * 1-5"   # weekdays 13:23 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Fill forms but do not submit (overrides config.yml)"
+        type: boolean
+        default: false
+
+# Only schedule/manual triggers: pull requests from forks can never reach the secret.
+permissions:
+  contents: write   # save encrypted state to the bot-state branch
+  models: read      # free GitHub Models for tailoring
+  actions: write    # keep the schedule alive
+
+concurrency:
+  group: jobbot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check setup
+        id: setup
+        run: |
+          if [ -z "$PROFILE_YAML" ]; then
+            echo "::warning::PROFILE_YAML secret is not set - nothing to do. See README."
+          else
+            echo "ready=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.setup.outputs.ready
+
+      - uses: actions/setup-python@v5
+        if: steps.setup.outputs.ready
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        if: steps.setup.outputs.ready
+        run: |
+          pip install -q -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Restore encrypted state
+        if: steps.setup.outputs.ready
+        run: |
+          mkdir -p .state
+          if git fetch -q --depth=1 origin bot-state 2>/dev/null; then
+            git show FETCH_HEAD:state.enc > .state/state.enc
+          fi
+
+      - name: Crawl, tailor, apply
+        if: steps.setup.outputs.ready
+        env:
+          JOBBOT_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: python -m jobbot
+
+      - name: Save encrypted state
+        if: always() && steps.setup.outputs.ready && hashFiles('.state/state.enc') != ''
+        run: |
+          cd .state
+          git init -q -b bot-state
+          git add state.enc
+          git -c user.name=jobbot -c user.email=jobbot@users.noreply.github.com commit -qm "encrypted state"
+          git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" bot-state
+
+      - name: Upload encrypted report
+        if: always() && steps.setup.outputs.ready
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobbot-report
+          path: out/jobbot-report.zip
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Keep schedule alive
+        # GitHub pauses schedules in repos with no activity for 60 days; re-enabling resets the timer.
+        if: always()
+        continue-on-error: true
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/jobbot.yml/enable"
