@@ -2,7 +2,7 @@ name: jobbot
 
 on:
   schedule:
-    - cron: "37 3 * * 1-5"   # weekdays 03:37 UTC (09:07 IST)
+    - cron: "37 3 * * *"   # every day 03:37 UTC (09:07 IST)
   workflow_dispatch:
     inputs:
       dry_run:
@@ -13,7 +13,6 @@ on:
 # Only schedule/manual triggers: pull requests from forks can never reach the secret.
 permissions:
   contents: write   # save encrypted state to the bot-state branch
-  models: read      # free GitHub Models for tailoring
   actions: write    # keep the schedule alive
   issues: write     # post the daily log / alerts to the "jobbot inbox" issue (GitHub emails them)
 
@@ -24,7 +23,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
       JOBBOT_KEY: ${{ secrets.JOBBOT_KEY }}

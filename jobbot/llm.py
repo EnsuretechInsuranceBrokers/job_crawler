@@ -1,6 +1,12 @@
-"""GitHub Models client. Free in Actions through the built-in GITHUB_TOKEN."""
+"""Optional LLM, through any OpenAI-compatible API with a free tier.
+
+Configured in the profile:
+    llm: {provider: gemini, api_key: "..."}          # or groq / openrouter
+    llm: {base_url: "https://host/v1", api_key: "...", model: "name"}   # anything else
+Model names change often, so unless `model` is given the client asks the provider
+which models exist and picks a suitable one.
+"""
 import json
-import os
 import re
 import time
 
@@ -8,72 +14,93 @@ import requests
 
 from .util import detail, log
 
-def endpoints():
-    """GitHub Models has had several front doors; use the first one that answers properly."""
-    owner = os.environ.get("GITHUB_REPOSITORY_OWNER", "")
-    urls = ["https://models.github.ai/inference/chat/completions"]
-    if owner:
-        urls.append(f"https://models.github.ai/orgs/{owner}/inference/chat/completions")
-    urls.append("https://models.inference.ai.azure.com/chat/completions")
-    return urls
+PROVIDERS = {
+    # name: (base url, fallback model, ranking of model ids - higher is better, None = unusable)
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash",
+               lambda m: _version(m) if re.fullmatch(r"gemini-[\d.]+-flash", m) else None),
+    "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile",
+             lambda m: (("70b" in m) * 2 + ("versatile" in m), _version(m)) if "llama" in m and "guard" not in m else None),
+    "openrouter": ("https://openrouter.ai/api/v1", "meta-llama/llama-3.3-70b-instruct:free",
+                   lambda m: (("llama" in m) + ("70b" in m), _version(m)) if m.endswith(":free") else None),
+}
+
+
+def _version(model):
+    return tuple(int(x) for x in re.findall(r"\d+", model)[:3])
 
 
 class LLM:
-    def __init__(self, cfg):
-        self.token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_MODELS_TOKEN")
-        self.model = cfg.get("model", "openai/gpt-4o-mini")
-        self.enabled = bool(cfg.get("enabled", True) and self.token)
+    def __init__(self, cfg, profile=None):
+        p = (profile or {}).get("llm") or {}
+        base, default, self.rank = PROVIDERS.get(str(p.get("provider", "")).lower(), (None, None, None))
+        self.base = str(p.get("base_url") or base or "").rstrip("/")
+        self.key = p.get("api_key")
+        self.model = p.get("model")
+        self.default = default
+        self.enabled = bool(cfg.get("enabled", True) and self.base and self.key)
         self.failures = 0
-        self.url = None  # the endpoint that worked
+        self.json_mode = True
 
-    def _post(self, url, body):
-        if "azure.com" in url:  # the legacy endpoint wants the bare model name
-            body = dict(body, model=body["model"].split("/")[-1])
-        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json",
-                   "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
-        for attempt in (1, 2):
-            # no redirects: a redirected POST silently becomes a GET and returns nonsense
-            r = requests.post(url, json=body, timeout=90, headers=headers, allow_redirects=False)
-            wait = float(r.headers.get("retry-after") or 0)
-            if r.status_code == 429 and attempt == 1 and 0 < wait <= 30:
-                time.sleep(wait + 1)  # short per-minute limit: wait once; longer limits fall through
-                continue
-            break
-        return r
+    def _headers(self):
+        return {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
+
+    def _pick_model(self):
+        """Ask the provider what exists; fall back to a known name."""
+        try:
+            r = requests.get(f"{self.base}/models", headers=self._headers(), timeout=30)
+            ids = [str(m.get("id", "")).split("/", 1)[-1] if str(m.get("id", "")).startswith("models/") else str(m.get("id", ""))
+                   for m in r.json().get("data", [])]
+            ranked = sorted(((self.rank(i), i) for i in ids if self.rank and self.rank(i) is not None), reverse=True)
+            if ranked:
+                return ranked[0][1]
+        except Exception as e:  # noqa: BLE001
+            detail(f"LLM model listing failed: {type(e).__name__}")
+        return self.default
 
     def ask(self, system, user, as_json=False):
         """Returns text (or parsed JSON), or None when the model is unavailable."""
         if not self.enabled:
             return None
+        if not self.model:
+            self.model = self._pick_model()
+            detail(f"LLM model: {self.model}")
+            if not self.model:
+                self.enabled = False
+                return None
         body = {"model": self.model, "temperature": 0.2,
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
-        if as_json:
-            body["response_format"] = {"type": "json_object"}
-        status = ""
-        for url in ([self.url] if self.url else endpoints()):
-            r = None
-            try:
-                r = self._post(url, body)
+        r, status = None, ""
+        try:
+            for attempt in (1, 2, 3):
+                if as_json and self.json_mode:
+                    body["response_format"] = {"type": "json_object"}
+                else:
+                    body.pop("response_format", None)
+                # no redirects: a redirected POST silently becomes a GET
+                r = requests.post(f"{self.base}/chat/completions", json=body, timeout=90,
+                                  headers=self._headers(), allow_redirects=False)
                 status = r.status_code
-                r.raise_for_status()
-                text = r.json()["choices"][0]["message"]["content"].strip()
-                parsed = json.loads(_json_part(text)) if as_json else text
-                self.failures, self.url = 0, url
-                return parsed
-            except Exception as e:  # noqa: BLE001
-                # API error bodies carry no personal data, but only show them in verbose/demo runs anyway
-                host = url.split("/")[2] + ("/orgs" if "/orgs/" in url else "")
-                detail(f"LLM call failed: {type(e).__name__} via {host} status={status} "
-                       f"type={(r.headers.get('content-type') if r is not None else '')} "
-                       f"location={(r.headers.get('location') if r is not None else '')} "
-                       f"body={(r.text[:200] if r is not None else '')!r}")
-                if self.url:  # a known-good endpoint failed: a real (rate-limit or content) failure
-                    break
-        self.failures += 1
-        if self.failures >= 3 or status in (401, 403, 404):
-            self.enabled = False  # quota exhausted or Models not enabled: stop trying this run
-            log(f"LLM disabled for this run (status {status}); using keyword tailoring")
-        return None
+                wait = float(r.headers.get("retry-after") or 0)
+                if status == 429 and attempt < 3 and wait <= 45:
+                    time.sleep((wait or 20) + 1)  # free tiers limit per minute: wait and retry
+                    continue
+                if status == 400 and as_json and self.json_mode:
+                    self.json_mode = False  # provider/model without JSON mode: ask in plain text
+                    continue
+                break
+            r.raise_for_status()
+            text = r.json()["choices"][0]["message"]["content"].strip()
+            parsed = json.loads(_json_part(text)) if as_json else text
+            self.failures = 0
+            return parsed
+        except Exception as e:  # noqa: BLE001
+            self.failures += 1
+            # error bodies carry no personal data, but only show them in verbose/demo runs anyway
+            detail(f"LLM call failed: {type(e).__name__} status={status} body={(r.text[:200] if r is not None else '')!r}")
+            if self.failures >= 3 or status in (401, 403, 404):
+                self.enabled = False  # bad key or quota gone: stop trying this run
+                log(f"LLM disabled for this run (status {status}); using keyword tailoring")
+            return None
 
 
 def _json_part(text):

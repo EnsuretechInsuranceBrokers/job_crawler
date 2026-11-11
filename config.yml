@@ -8,21 +8,20 @@ sources:
   # jobs the bot tries to submit by itself. Add any company: the token is the
   # last part of its board URL (boards.greenhouse.io/<token>,
   # jobs.lever.co/<token>, jobs.ashbyhq.com/<token>). Dead tokens are skipped.
-  # The second group in each list are companies with engineering teams in India.
+  # The second group in each list was verified to have openings in India (Nov 2026).
   greenhouse: [stripe, airbnb, discord, figma, databricks, cloudflare, gitlab,
                coinbase, robinhood, instacart, dropbox, twilio, datadog, mongodb,
                elastic, okta, pinterest, reddit, lyft, asana, brex, duolingo,
                affirm, anthropic, scaleai, airtable, vercel, samsara, gusto,
                flexport,
-               postman, phonepe, groww, razorpaysoftwareprivatelimited, druva,
-               rubrik, thoughtspot, hasura, innovaccer, browserstack, slice,
-               cohesity, zscaler, nutanix, sprinklr, tekion, chargebee, moengage,
-               clevertap, uniphore, observeai, mindtickle, whatfix, yellowai]
+               zscaler, purestorage, inmobi, zetaglobal, rubrik, tide, glance,
+               toast, netskope, agoda, druva, commvault, groww, sumologic, turing,
+               singlestore, observeai, newrelic, yugabyte, fastly, cockroachlabs]
   lever: [palantir, spotify, veeva, outreach,
-          cred, meesho, paytm, zeta]
+          paytm, gohighlevel, meesho, zeta, mindtickle, fampay, linkedin, cred]
   ashby: [ramp, notion, linear, openai, posthog, supabase, replit, vanta,
           elevenlabs, cohere, zapier,
-          atlan, plane, sarvam, composio]
+          tekion, sarvam, atlys, snowflake, clickhouse, atlan, composio, plane]
   # Free aggregator APIs. Their jobs link to arbitrary sites, so matches are
   # tailored and put in your report for a manual click, not auto-submitted.
   remotive: true
@@ -35,15 +34,15 @@ match:
 
 apply:
   dry_run: true          # true: fill forms but never press submit. Flip to false when the report looks right.
-  max_per_run: 10        # auto-apply attempts per run
+  max_per_run: 29        # auto-apply attempts per run (daily run -> about 203 a week)
   max_manual_per_run: 10 # tailored "apply yourself" packets per run
-  max_per_company: 2
+  max_per_company: 2     # per run, so one employer is not flooded
   accept_consent: true   # tick required privacy/consent checkboxes
   delay_seconds: 20      # pause between applications
 
 llm:
-  # GitHub Models: free inside Actions via the built-in GITHUB_TOKEN.
-  # If unavailable the bot falls back to keyword-based tailoring.
+  # Optional AI for tailoring, cover letters and open questions. The provider and
+  # its free API key go in your profile (see profile.example.yml); without one the
+  # bot uses keyword tailoring and a template cover letter.
   enabled: true
-  model: openai/gpt-4o-mini
   answer_questions: true # let the model answer unknown required questions, strictly from your profile

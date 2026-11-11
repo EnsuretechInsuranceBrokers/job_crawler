@@ -31,7 +31,7 @@ def run(args):
     out_dir = os.path.join(ROOT, "out")
     os.makedirs(out_dir, exist_ok=True)
     state = State(os.path.join(ROOT, ".state", "demo.enc" if args.demo else "state.enc"), profile["state_key"])
-    llm = LLM(cfg["llm"])
+    llm = LLM(cfg["llm"], profile)
     log(f"mode: {'DRY RUN' if dry else 'LIVE'}{' (demo profile)' if args.demo else ''}; "
         f"llm: {'on' if llm.enabled else 'off'}; remembered jobs: {len(state.jobs)}")
 
@@ -59,7 +59,9 @@ def run(args):
     file_name = re.sub(r"\W+", "_", profile["name"]).strip("_") + "_Resume.pdf"
     letter_name = file_name.replace("_Resume.pdf", "_Cover_Letter.pdf")
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=os.environ.get("JOBBOT_CHROMIUM") or None)
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")  # honour a corporate/sandbox proxy
+        browser = pw.chromium.launch(executable_path=os.environ.get("JOBBOT_CHROMIUM") or None,
+                                     proxy={"server": proxy} if proxy else None)
         context = browser.new_context(locale="en-US", viewport={"width": 1280, "height": 1600})
         for n, (job, auto) in enumerate(chosen, 1):
             detail(f"[{n}/{len(chosen)}] {job.title} @ {job.company} ({job.source}, score {job.score})")

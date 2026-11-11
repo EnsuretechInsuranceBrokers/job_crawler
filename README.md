@@ -15,8 +15,8 @@ PDF and the link, so finishing by hand takes a minute.
 3. **Tailor** – reorders your skills and picks the most relevant bullets for
    each job, and rewrites the two-line summary. It can only *select and reorder
    what is already in your profile*; a summary that mentions anything your
-   profile lacks is thrown away. Uses GitHub Models (free in Actions), with a
-   keyword-based fallback.
+   profile lacks is thrown away. Works by keyword matching out of the box, and
+   with an AI model if you add a free API key (below).
 4. **Cover letter** – written per job under the same rule (facts from your
    profile only; anything else falls back to a plain template), as PDF and text.
 5. **Apply** – opens the Greenhouse/Lever/Ashby form in headless Chromium, fills
@@ -135,11 +135,29 @@ Expect the manual share to shrink over the first week as your `answers:` grow.
 
 ## Cost
 
-$0. Actions minutes are free for public repositories, GitHub Models has a free
-quota for the built-in token, and all job sources are free public APIs. If the
-model quota runs out the bot falls back to keyword tailoring. Use is still
-subject to GitHub's Actions terms and each site's terms; the bot is deliberately
-low-volume (`max_per_run`, `delay_seconds`).
+$0. Actions minutes are free for public repositories and all job sources are
+free public APIs. The AI is optional and uses a free-tier key you supply; if its
+quota runs out mid-run the bot carries on with keyword tailoring. Use is still
+subject to GitHub's Actions terms and each site's terms; the pace is deliberate
+(`max_per_run`, `max_per_company`, `delay_seconds`).
+
+### Optional: AI tailoring (one free API key)
+
+GitHub Models, which the bot first used, was retired in July 2026. Any
+OpenAI-compatible API with a free tier works instead – Google Gemini, Groq or
+OpenRouter. Create a key (links in `profile.example.yml`), add
+
+```yaml
+llm:
+  provider: gemini
+  api_key: "your-key"
+```
+
+to your profile and re-seal it. The bot asks the provider which models exist and
+picks one, so there is no model name to keep up to date. With a model, resumes
+and cover letters read better and the bot can answer open-ended questions
+("Why do you want to work here?") from your real experience – the main reason
+forms otherwise stop for manual input. Your resume text is sent to that provider.
 
 ## Roadmap
 

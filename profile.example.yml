@@ -71,16 +71,28 @@ search:
 # "decline" picks the "prefer not to say" style option.
 # An answer may depend on where the job is - keys are regexes on the job location:
 #   "sponsor": {"india|mumbai|bengaluru": "No", "default": "Yes"}
+# A list is tried in order until one fits the options a site offers:
+#   "how did you hear": ["Company careers page", "Job site", "Other"]
 answers:
   "authori[sz]ed to work|legally (able|eligible|authori)|right to work": "Yes"
   "sponsor": "No"
   "salary|compensation|pay expectation": "Open to discussing; flexible for the right role"
   "notice period|when can you start|start date|available to start": "4 weeks"
   "years of .*experience": "6"
-  "how did you (hear|find)|where did you (hear|find)|source": "Company careers page"
+  "how did you (hear|find|learn|get to know)|where did you (hear|find)|source": ["Company careers page", "Company website", "Job site", "Other"]
   "relocat": "Yes"
   "previously (worked|been employed)|former employee|worked (for|at) .* before": "No"
   "gender|race|ethnic|hispanic|veteran|disabilit|pronoun|sexual orientation|transgender": "decline"
+
+# Optional AI for tailoring, cover letters and open-ended questions. Any free
+# OpenAI-compatible API works; the bot picks a current model by itself.
+#   gemini      key from https://aistudio.google.com/apikey   (free tier)
+#   groq        key from https://console.groq.com/keys         (free tier)
+#   openrouter  key from https://openrouter.ai/keys            (free models)
+# Your resume text is sent to the provider you choose.
+# llm:
+#   provider: gemini
+#   api_key: "your-key"
 
 # Notifications work with no setup: the bot comments on a "jobbot inbox" issue in
 # this repo and GitHub emails you. Because the repo is public those comments hold

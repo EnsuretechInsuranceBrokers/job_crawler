@@ -168,6 +168,7 @@ BUILTIN = [  # (regex on short label, profile -> answer); first match wins
     (r"portfolio|website|personal site|blog|other (link|url)", lambda p: p["links"].get("website")),
     (r"(current|present|most recent|latest).{0,25}(company|employer)|^org|^company( name)?$", lambda p: _last(p).get("company")),
     (r"current (job )?(title|role|position)|^title$|^job title", lambda p: _last(p).get("title")),
+    (r"^(home |current |mailing |postal |permanent |residential )?address", lambda p: p.get("address") or p.get("location")),
     (r"^country|country of residence|country.{0,20}(live|reside|based|located)|which country", lambda p: p.get("country") or (p.get("location") or "").split(",")[-1].strip()),
     (r"^(current |your )?(location|city)|where are you (currently )?(based|located|living)|city.*(live|reside)",
      lambda p: p.get("location")),
@@ -190,9 +191,13 @@ def rule_answer(label, profile, job=None):
             where = (job.location if job else "") or ""
             for loc_pattern, value in answer.items():
                 if loc_pattern != "default" and re.search(loc_pattern, where, re.I):
-                    return str(value)
-            return str(answer["default"]) if "default" in answer else None
-        return str(answer)
+                    answer = {"default": value}
+                    break
+            answer = answer.get("default")
+            if answer is None:
+                return None
+        # a list means "try these in order" - useful when sites word their options differently
+        return [str(x) for x in answer] if isinstance(answer, list) else str(answer)
     if len(label) <= 70:
         for pattern, fn in BUILTIN:
             if re.search(pattern, label, re.I):
@@ -203,6 +208,18 @@ def rule_answer(label, profile, job=None):
 
 AGREE = re.compile(r"^\W*(i )?(agree|accept|acknowledge|consent|confirm|yes)\b", re.I)
 SYNONYMS = {"male": "man", "female": "woman", "man": "male", "woman": "female"}
+
+
+def _duration(answer, options_text):
+    """'2 weeks' against options counted in days -> 14 (so it can land in '0 to 30 days')."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?) ?(day|week|month|year)s?", answer)
+    if not m:
+        return None
+    days = float(m.group(1)) * {"day": 1, "week": 7, "month": 30, "year": 365}[m.group(2)]
+    for unit, size in (("day", 1), ("week", 7), ("month", 30), ("year", 365)):
+        if unit in options_text:
+            return days / size
+    return None
 
 
 def _in_range(x, text):
@@ -236,7 +253,7 @@ def pick_option(answer, options):
     try:
         number = float(a)
     except ValueError:
-        number = None
+        number = _duration(a, " ".join(texts))
     tests = (lambda t: t == a,
              lambda t: t.startswith(a + " ") or a.startswith(t + " "),
              lambda t: re.search(r"(?<![a-z0-9])" + re.escape(a) + r"(?![a-z0-9])", t) is not None)
@@ -369,8 +386,11 @@ class FormFiller:
             self._tick(f["jb"])
             return True
         a = rule_answer(f["label"], self.profile, self.job) if f["label"] else None
+        for candidate in ([a] if isinstance(a, str) else a or []):
+            if self.put(f, candidate):
+                return True
         if a:
-            return self.put(f, a)
+            return False
         if (f["required"] and self.cfg.get("accept_consent", True) and f["kind"] in ("select", "radio", "checkboxes", "combobox")
                 and POLICY.search(f["label"])):
             return self.put(f, "consent")

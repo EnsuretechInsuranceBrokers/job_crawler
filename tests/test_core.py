@@ -292,38 +292,56 @@ def test_sealed_profile_roundtrip(tmp_path, monkeypatch):
     assert config.load_profile()["name"] == "Jane Doe"
 
 
-def test_llm_tries_endpoints_until_one_answers(monkeypatch):
+def test_llm_picks_model_and_degrades_gracefully(monkeypatch):
     from jobbot import llm as llm_mod
-    seen = []
+    assert not llm_mod.LLM({"enabled": True}, {}).enabled                 # no provider configured -> off
+    assert not llm_mod.LLM({"enabled": False}, {"llm": {"provider": "gemini", "api_key": "k"}}).enabled
+    calls = []
 
     class Resp:
-        def __init__(self, status, text, payload=None):
-            self.status_code, self.text, self.payload, self.headers = status, text, payload, {}
+        def __init__(self, status, payload):
+            self.status_code, self.payload, self.headers, self.text = status, payload, {}, ""
 
         def raise_for_status(self):
             if self.status_code >= 400:
                 raise llm_mod.requests.HTTPError("x")
 
         def json(self):
-            if self.payload is None:
-                raise json.JSONDecodeError("x", "", 0)
             return self.payload
 
-    def post(url, json, timeout, headers, allow_redirects):
-        seen.append((url, json["model"]))
-        assert allow_redirects is False
-        if "/orgs/" in url:
-            return Resp(200, "", {"choices": [{"message": {"content": '```json\n{"ok": true}\n```'}}]})
-        return Resp(200, "OK\r\n")
+    models = {"data": [{"id": "models/gemini-2.0-flash"}, {"id": "models/gemini-3.5-flash"}, {"id": "models/gemini-3.5-flash-lite"},
+                       {"id": "models/gemini-9-pro"}, {"id": "models/text-embedding-004"}]}
+    monkeypatch.setattr(llm_mod.requests, "get", lambda url, **kw: Resp(200, models))
 
-    monkeypatch.setenv("GITHUB_TOKEN", "t")
-    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "acme")
+    def post(url, json, timeout, headers, allow_redirects):
+        calls.append((url, json))
+        if "response_format" in json:
+            return Resp(400, {})                      # this model has no JSON mode
+        return Resp(200, {"choices": [{"message": {"content": 'Sure: {"ok": true}'}}]})
+
     monkeypatch.setattr(llm_mod.requests, "post", post)
-    bot = llm_mod.LLM({"enabled": True, "model": "openai/gpt-4o-mini"})
+    bot = llm_mod.LLM({"enabled": True}, {"llm": {"provider": "gemini", "api_key": "k"}})
     assert bot.ask("s", "u", as_json=True) == {"ok": True}
-    assert [u.split("/")[3] for u, _ in seen] == ["inference", "orgs"]
-    seen.clear()
-    assert bot.ask("s", "u", as_json=True) == {"ok": True} and len(seen) == 1  # remembers the working endpoint
+    assert bot.model == "gemini-3.5-flash" and calls[0][0].endswith("/v1beta/openai/chat/completions")
+    assert len(calls) == 2 and "response_format" not in calls[1][1]
+    custom = llm_mod.LLM({}, {"llm": {"base_url": "https://x.test/v1/", "api_key": "k", "model": "m"}})
+    assert custom.ask("s", "u") == 'Sure: {"ok": true}' and calls[-1][0] == "https://x.test/v1/chat/completions"
+    monkeypatch.setattr(llm_mod.requests, "post", lambda *a, **k: Resp(401, {}))
+    assert bot.ask("s", "u") is None and not bot.enabled   # bad key: give up for the run, bot carries on
+
+
+def test_list_answers_durations_and_address(profile, job):
+    profile["answers"] = {"how did you (hear|get to know|learn)": ["Company careers page", "Job site", "Other"],
+                          "notice period": "2 weeks"}
+    assert rule_answer("How did you get to know about this role?", profile, job) == ["Company careers page", "Job site", "Other"]
+    sites = [{"text": "Linkedin"}, {"text": "Meesho Job Site"}, {"text": "Naukri"}]
+    assert [pick_option(a, sites) for a in rule_answer("How did you hear?", profile, job)] == [None, 1, None]
+    notice = [{"text": "0 to 30 days"}, {"text": "30 to 60 days"}, {"text": "60+ days"}]
+    assert pick_option("2 weeks", notice) == 0 and pick_option("10 weeks", notice) == 2
+    assert pick_option("2 months", [{"text": "Less than 1 month"}, {"text": "1-3 months"}]) == 1
+    assert rule_answer("Home Address", profile) == "Austin, TX, United States"
+    profile["address"] = "1 Main St, Austin"
+    assert rule_answer("Address", profile) == "1 Main St, Austin"
 
 
 def test_workflow_files_are_valid():
