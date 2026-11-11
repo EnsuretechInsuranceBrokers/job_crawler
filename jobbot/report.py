@@ -64,9 +64,9 @@ def encrypt_zip(out_dir, password, name="jobbot-report.zip"):
     return path
 
 
-def send_email(smtp, text, results, counts):
+def send_email(smtp, text, results, counts=None, subject=None):
     msg = EmailMessage()
-    msg["Subject"] = f"jobbot: {counts['submitted']} submitted, {counts['todo']} need you"
+    msg["Subject"] = subject or f"jobbot: {counts['submitted']} submitted, {counts['todo']} need you"
     msg["From"], msg["To"] = smtp["user"], smtp.get("to") or smtp["user"]
     msg.set_content(text)
     size = 0

@@ -63,7 +63,7 @@ def run(args):
         context = browser.new_context(locale="en-US", viewport={"width": 1280, "height": 1600})
         for n, (job, auto) in enumerate(chosen, 1):
             detail(f"[{n}/{len(chosen)}] {job.title} @ {job.company} ({job.source}, score {job.score})")
-            pdf, used_llm = None, False
+            pdf, letter_pdf, used_llm = None, None, False
             try:
                 tailored, used_llm = tailor(profile, job, llm)
                 job_dir = os.path.join(out_dir, f"{n:02d}_" + re.sub(r"\W+", "_", job.company)[:30])
@@ -85,7 +85,7 @@ def run(args):
             if not dry:
                 state.record(job, outcome.status)
                 state.save()  # after every job, so a later crash loses nothing
-                notify.alert(profile, job, outcome)
+                notify.alert(profile, job, outcome, [x for x in (pdf, letter_pdf) if x], state)
                 if auto and n < len(chosen):
                     time.sleep(acfg.get("delay_seconds", 20))
         browser.close()
@@ -102,11 +102,10 @@ def run(args):
         print(text, file=sys.stderr)
 
     if not args.demo:
-        if not dry:
-            state.save()
         report.encrypt_zip(out_dir, profile["state_key"])
-        if notify.daily_log(profile, results, dry, sum(1 for r in results if r[3])):
-            log("whatsapp log sent")
+        if notify.daily_log(profile, results, dry, sum(1 for r in results if r[3]), state):
+            log("daily log sent to phone")
+        state.save()  # dry runs record no jobs, so this only keeps settings such as the Telegram chat
         if profile.get("smtp") and results:
             try:
                 report.send_email(profile["smtp"], text, results, summary)

@@ -21,7 +21,13 @@ def score_job(job, profile, max_age_days=0):
     locations = search.get("locations") or []
     if locations:
         loc = norm(job.location)
-        ok = any(norm(l) in loc for l in locations) or (job.remote and search.get("remote_ok", True))
+        ok = any(norm(l) in loc for l in locations)
+        if not ok and job.remote and search.get("remote_ok", True):
+            # "Remote - US" is not open to someone elsewhere: with remote_regions set, a remote job
+            # must name one of those regions (or name no place at all).
+            regions = search.get("remote_regions") or []
+            bare = not re.sub(r"\b(remote|anywhere|worldwide|global|fully|work from home|wfh|only)\b", "", loc).strip()
+            ok = not regions or bare or any(norm(r) in loc for r in regions)
         if not ok:
             return 0.0
     text = norm(job.title + " " + job.description)

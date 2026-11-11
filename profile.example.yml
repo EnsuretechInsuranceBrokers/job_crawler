@@ -62,11 +62,15 @@ search:
   keywords: []            # extra terms to reward besides your skills
   locations: [united states, austin]   # job location must contain one of these; [] = anywhere
   remote_ok: true         # also accept jobs marked remote
+  # remote_regions: [united states, americas, north america]
+  #   optional: a remote job that names a place ("Remote - Canada") must name one of these
 
 # Answers to application-form questions. Keys are case-insensitive regexes
 # matched against the question text; first match wins. Every question the bot
 # could not answer is listed in the report so you can add it here once.
 # "decline" picks the "prefer not to say" style option.
+# An answer may depend on where the job is - keys are regexes on the job location:
+#   "sponsor": {"india|mumbai|bengaluru": "No", "default": "Yes"}
 answers:
   "authori[sz]ed to work|legally (able|eligible|authori)|right to work": "Yes"
   "sponsor": "No"
@@ -78,11 +82,15 @@ answers:
   "previously (worked|been employed)|former employee|worked (for|at) .* before": "No"
   "gender|race|ethnic|hispanic|veteran|disabilit|pronoun|sexual orientation|transgender": "decline"
 
-# Optional: WhatsApp alerts (CAPTCHA / verification needed) and a daily log,
-# sent through the free CallMeBot service. Activate once - see README.
+# Optional: phone notifications - an alert when a form needs you (CAPTCHA,
+# verification code) and a daily log. Use any of these; setup is in the README.
+# telegram:
+#   token: "123456:ABC-your-bot-token"   # from @BotFather; also delivers the PDFs
+# ntfy:
+#   topic: "jobbot-some-long-secret-name"  # subscribe to it in the ntfy app
 # whatsapp:
-#   phone: "+15550100199"     # with country code
-#   apikey: "1234567"         # the key CallMeBot sends you
+#   phone: "+15550100199"                # CallMeBot, when it has free slots
+#   apikey: "1234567"
 
 # Optional: email yourself the report + tailored resumes and cover letters after each run.
 # For Gmail use an app password. Remove this block to skip email.

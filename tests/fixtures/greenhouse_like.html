@@ -13,7 +13,12 @@
     <select id="q2" aria-required="true"><option value="">Select...</option><option value="1">Yes</option><option value="0">No</option></select></div>
   <div class="field select"><label id="q3-label" for="q3">Will you now or in the future require visa sponsorship?<span>*</span></label>
     <div class="select__control"><input id="q3" role="combobox" aria-labelledby="q3-label" aria-required="true"><div id="q3-menu" hidden>
-      <div role="option">Yes, I will require sponsorship</div><div role="option">No, I will not require sponsorship</div></div></div></div>
+      <div role="option">Yes, I will require sponsorship</div><div role="option">No, I will not require sponsorship</div></div></div>
+    <input aria-hidden="true" tabindex="-1" aria-required="true" class="css-1a0ro4n-requiredInput" style="opacity:0;position:absolute;width:100%;height:1px"></div>
+  <div class="field"><label for="yrs">How many years of professional experience do you have?<span>*</span></label>
+    <select id="yrs" aria-required="true"><option value="">Select...</option><option value="a">0-2 years</option><option value="b">3-5 years</option><option value="c">6-10 years</option><option value="d">10+ years</option></select></div>
+  <div class="field"><label for="pp">By selecting "I agree," I understand my information will be processed per the Candidate Privacy Policy.<span>*</span></label>
+    <select id="pp" aria-required="true"><option value="">Select...</option><option value="y">I agree</option></select></div>
   <div class="field"><label for="q4">Why do you want to work here?<span>*</span></label><textarea id="q4" aria-required="true"></textarea></div>
   <fieldset><legend>Privacy notice<span>*</span></legend>
     <div><input type="checkbox" id="q5" name="q5"><label for="q5">I acknowledge the privacy policy</label></div></fieldset>
@@ -30,9 +35,9 @@
     e.preventDefault();
     const v = id => document.getElementById(id).value;
     const data = { first: v('first_name'), last: v('last_name'), email: v('email'), phone: v('phone'), linkedin: v('q1'), auth: v('q2'),
-      sponsor: q3.dataset.v || '', why: v('q4'), consent: document.getElementById('q5').checked, gender: v('g'),
+      sponsor: q3.dataset.v || '', why: v('q4'), consent: document.getElementById('q5').checked, gender: v('g'), years: v('yrs'), policy: v('pp'),
       resume: (document.getElementById('resume').files[0] || {}).name || '', cover: document.getElementById('cover_letter').files.length };
-    if (!data.first || !data.last || !data.email || !data.resume || !data.auth || !data.sponsor || !data.why || !data.consent) {
+    if (!data.first || !data.last || !data.email || !data.resume || !data.auth || !data.sponsor || !data.why || !data.consent || !data.years || !data.policy) {
       document.body.insertAdjacentHTML('beforeend', '<p class="error">Please complete required fields</p>'); return; }
     document.body.innerHTML = '<h1>Thank you for applying.</h1><pre id="data">' + JSON.stringify(data) + '</pre>';
   });

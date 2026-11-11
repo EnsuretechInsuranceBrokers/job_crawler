@@ -18,6 +18,7 @@ CONFIRM = re.compile(r"thank you|thanks for applying|application (has been|was) 
 VERIFY = re.compile(r"(verification|security) code|verify your email|enter the code", re.I)
 DECLINE = re.compile(r"decline|prefer not|rather not|don'?t wish|do not wish|not (wish|want) to", re.I)
 CONSENT = re.compile(r"agree|consent|acknowledge|privacy|confirm|certify|understand|terms", re.I)
+POLICY = re.compile(r"privacy (policy|notice|statement)|terms (of|and)|data (processing|protection)|gdpr|\"?i agree", re.I)
 CAPTCHA_SEL = ('iframe[src*="recaptcha/api2/bframe"], iframe[src*="recaptcha/enterprise/bframe"], '
                'iframe[src*="recaptcha/api2/anchor"]:not([src*="size=invisible"]), '
                'iframe[src*="hcaptcha.com"], iframe[src*="challenges.cloudflare.com"], iframe[title*="challenge" i]')
@@ -63,7 +64,9 @@ SCAN_JS = r"""
     if (el.closest('label')) return el.closest('label');
     let p = el.parentElement;
     for (let i = 0; i < 4 && p; i++, p = p.parentElement) {
-      const l = [...p.querySelectorAll('label, legend, [class*="label" i]')].find(x => !x.contains(el) && clean(x.innerText));
+      // never borrow a label that belongs to a different control
+      const l = [...p.querySelectorAll('label, legend, [class*="label" i]')].find(x => !x.contains(el) && clean(x.innerText)
+        && !(x.htmlFor && x.htmlFor !== el.id) && !x.querySelector('input, select, textarea'));
       if (l) return l;
     }
     return null;
@@ -96,6 +99,8 @@ SCAN_JS = r"""
   for (const el of document.querySelectorAll('input, textarea, select')) {
     const type = (el.getAttribute('type') || el.tagName).toLowerCase();
     if (['hidden', 'submit', 'button', 'image', 'reset', 'search'].includes(type) || el.disabled) continue;
+    const info = el.tagName.toLowerCase() + '[' + type + ']' + (el.getAttribute('role') ? '{' + el.getAttribute('role') + '}' : '')
+      + '#' + (el.id || '') + '.' + String(el.className).slice(0, 40);
     if (type === 'radio' || type === 'checkbox') {
       const lab = labelEl(el);
       if (!shown(el) && !shown(lab)) continue;
@@ -104,14 +109,16 @@ SCAN_JS = r"""
       groups.get(key).push(el);
       continue;
     }
+    // react-select and friends add an invisible mirror input purely for validation: not a question
+    if (el.getAttribute('aria-hidden') === 'true' || /requiredInput/i.test(String(el.className))) continue;
     if (type === 'file') {
       const lab = labelEl(el), d = describe(el, lab);
-      out.push({ jb: tag(el), kind: 'file', label: clean(d.label + ' ' + (el.name || '') + ' ' + (el.id || '')), required: d.required, filled: el.files.length > 0 });
+      out.push({ jb: tag(el), info, kind: 'file', label: clean(d.label + ' ' + (el.name || '') + ' ' + (el.id || '')), required: d.required, filled: el.files.length > 0 });
       continue;
     }
     if (!shown(el)) continue;
     const d = describe(el, labelEl(el));
-    const f = { jb: tag(el), label: d.label, required: d.required, filled: !!el.value };
+    const f = { jb: tag(el), info, label: d.label, required: d.required, filled: !!el.value };
     if (el.tagName === 'SELECT') {
       f.kind = 'select';
       f.options = [...el.options].filter(o => o.value !== '' && !o.disabled).map(o => ({ text: clean(o.text), value: o.value }));
@@ -159,22 +166,33 @@ BUILTIN = [  # (regex on short label, profile -> answer); first match wins
     (r"github", lambda p: p["links"].get("github")),
     (r"twitter|\bx\.com", lambda p: p["links"].get("twitter")),
     (r"portfolio|website|personal site|blog|other (link|url)", lambda p: p["links"].get("website")),
-    (r"current (company|employer)|^org|^company( name)?$|most recent (company|employer)", lambda p: _last(p).get("company")),
+    (r"(current|present|most recent|latest).{0,25}(company|employer)|^org|^company( name)?$", lambda p: _last(p).get("company")),
     (r"current (job )?(title|role|position)|^title$|^job title", lambda p: _last(p).get("title")),
-    (r"^country", lambda p: p.get("country") or (p.get("location") or "").split(",")[-1].strip()),
+    (r"^country|country of residence|country.{0,20}(live|reside|based|located)|which country", lambda p: p.get("country") or (p.get("location") or "").split(",")[-1].strip()),
     (r"^(current |your )?(location|city)|where are you (currently )?(based|located|living)|city.*(live|reside)",
      lambda p: p.get("location")),
 ]
 
 
-def rule_answer(label, profile):
-    """Answer from the user's `answers` map, then from built-in identity rules."""
+def rule_answer(label, profile, job=None):
+    """Answer from the user's `answers` map, then from built-in identity rules.
+
+    A user answer may depend on where the job is: {"india|mumbai": "Yes", "default": "No"} -
+    keys are regexes matched against the job location.
+    """
     for pattern, answer in (profile.get("answers") or {}).items():
         try:
-            if re.search(pattern, label, re.I):
-                return str(answer)
+            if not re.search(pattern, label, re.I):
+                continue
         except re.error:
             continue
+        if isinstance(answer, dict):
+            where = (job.location if job else "") or ""
+            for loc_pattern, value in answer.items():
+                if loc_pattern != "default" and re.search(loc_pattern, where, re.I):
+                    return str(value)
+            return str(answer["default"]) if "default" in answer else None
+        return str(answer)
     if len(label) <= 70:
         for pattern, fn in BUILTIN:
             if re.search(pattern, label, re.I):
@@ -183,16 +201,49 @@ def rule_answer(label, profile):
     return None
 
 
+AGREE = re.compile(r"^\W*(i )?(agree|accept|acknowledge|consent|confirm|yes)\b", re.I)
+SYNONYMS = {"male": "man", "female": "woman", "man": "male", "woman": "female"}
+
+
+def _in_range(x, text):
+    """Does the number x fall in an option like '3-5 years', '10+', 'less than 1 year'?"""
+    t = text.lower().replace(",", "")
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|\u2013|\u2014|to)\s*(\d+(?:\.\d+)?)", t)
+    if m:
+        return float(m.group(1)) <= x <= float(m.group(2))
+    m = re.search(r"(\d+(?:\.\d+)?)\s*\+|(?:at least|minimum of)\s*(\d+(?:\.\d+)?)", t)
+    if m:
+        return x >= float(m.group(1) or m.group(2))
+    m = re.search(r"(?:more than|over|greater than)\s*(\d+(?:\.\d+)?)", t)
+    if m:
+        return x > float(m.group(1))
+    m = re.search(r"(?:less than|under|fewer than|below)\s*(\d+(?:\.\d+)?)", t)
+    if m:
+        return x < float(m.group(1))
+    return False
+
+
 def pick_option(answer, options):
     """Map a free-form answer onto one of the offered option texts. Returns index or None."""
     a = norm(answer)
     texts = [norm(o["text"]) for o in options]
     if a == "decline":
         return next((i for i, o in enumerate(options) if DECLINE.search(o["text"])), None)
+    if a == "consent":  # internal token: the "I agree" style option
+        return next((i for i, o in enumerate(options) if AGREE.search(o["text"])), None)
+    if a in SYNONYMS and a not in texts and SYNONYMS[a] in texts:
+        a = SYNONYMS[a]
+    try:
+        number = float(a)
+    except ValueError:
+        number = None
     tests = (lambda t: t == a,
              lambda t: t.startswith(a + " ") or a.startswith(t + " "),
              lambda t: re.search(r"(?<![a-z0-9])" + re.escape(a) + r"(?![a-z0-9])", t) is not None)
     for n, test in enumerate(tests):
+        if n == 2 and number is not None:  # "2" must mean the range holding 2, not any option containing a 2
+            hits = [i for i, o in enumerate(options) if _in_range(number, o["text"])]
+            return hits[0] if hits else None
         hits = [i for i, t in enumerate(texts) if t and test(t)]
         if len(hits) == 1 or (hits and n == 0):
             return hits[0]
@@ -253,7 +304,7 @@ class FormFiller:
 
         if choose():
             return True
-        if norm(answer) == "decline":
+        if norm(answer) in ("decline", "consent"):
             self.page.keyboard.press("Escape")
             return False
         box.fill(answer[:60])
@@ -268,7 +319,7 @@ class FormFiller:
         """Enter one answer. Returns True when the field was actually filled."""
         kind = f["kind"]
         if kind in ("text", "textarea"):
-            if norm(answer) == "decline":
+            if norm(answer) in ("decline", "consent"):
                 return False
             self.loc(f["jb"]).fill(answer, timeout=5000)
             return True
@@ -302,42 +353,65 @@ class FormFiller:
         if f["kind"] == "checkbox" and f["required"] and self.cfg.get("accept_consent", True) and CONSENT.search(f["label"]):
             self._tick(f["jb"])
             return True
-        a = rule_answer(f["label"], self.profile) if f["label"] else None
-        return self.put(f, a) if a else False
+        a = rule_answer(f["label"], self.profile, self.job) if f["label"] else None
+        if a:
+            return self.put(f, a)
+        if (f["required"] and self.cfg.get("accept_consent", True) and f["kind"] in ("select", "radio", "checkboxes", "combobox")
+                and POLICY.search(f["label"])):
+            return self.put(f, "consent")
+        return False
 
     def fill(self):
         """Fill what the profile can answer. Returns the required questions left open."""
-        open_required = {}
-        for _ in range(3):  # answering can reveal follow-up questions
+        answered, attempts = set(), {}
+        for _ in range(4):  # answering can reveal follow-up questions or re-render the form
             fields = [f for f in self.page.evaluate(SCAN_JS) if f["jb"] not in self.done]
             if not fields:
                 break
             for f in fields:
-                self.done.add(f["jb"])
                 if f.get("filled"):
+                    self.done.add(f["jb"])
                     continue
                 try:
                     ok = self.answer(f)
+                    self.done.add(f["jb"])
                 except Exception as e:  # noqa: BLE001
-                    detail(f"could not fill '{f['label'][:50]}': {type(e).__name__}")
+                    detail(f"could not fill '{f['label'][:50]}' ({f.get('info', f['kind'])}): {type(e).__name__}")
                     ok = False
+                    attempts[f["label"]] = attempts.get(f["label"], 0) + 1
+                    if attempts[f["label"]] >= 2:  # one retry on the next pass, then give up
+                        self.done.add(f["jb"])
                 if ok:
+                    answered.add(f["jb"])
                     self.filled += 1
-                elif f["required"]:
-                    open_required[f["jb"]] = f
             self.page.wait_for_timeout(300)
-        if open_required and self.cfg.get("llm_answer_questions", True):
-            askable = [f for f in open_required.values() if f["kind"] != "file" and f["label"]]
-            for jb, a in llm_answers(self.llm, askable, self.profile, self.job).items():
-                f = open_required.get(jb)
+
+        def still_open():
+            # Judge by what the form shows now, so a re-rendered or duplicate field is not counted twice.
+            seen, out = set(), []
+            for f in self.page.evaluate(SCAN_JS):
+                if f["required"] and not f.get("filled") and f["jb"] not in answered and f["label"] not in seen:
+                    seen.add(f["label"])
+                    out.append(f)
+            return out
+
+        open_fields = still_open()
+        if open_fields and self.cfg.get("llm_answer_questions", True):
+            askable = {f["jb"]: f for f in open_fields if f["kind"] != "file" and f["label"]}
+            for jb, a in llm_answers(self.llm, list(askable.values()), self.profile, self.job).items():
+                f = askable.get(jb)
                 try:
                     if f and self.put(f, a):
+                        answered.add(jb)
                         self.filled += 1
                         self.llm_used.append((f["label"], a))
-                        del open_required[jb]
                 except Exception:  # noqa: BLE001
                     pass
-        return [f["label"] or f"(unlabelled {f['kind']})" for f in open_required.values()]
+            open_fields = still_open()
+        for f in open_fields:
+            detail(f"unanswered: '{f['label'][:60]}' kind={f['kind']} {f.get('info', '')}"
+                   + (f" options={[o['text'][:25] for o in f['options'][:6]]}" if f.get("options") else ""))
+        return [f["label"] or f"(unlabelled {f['kind']})" for f in open_fields]
 
 
 def _captcha(page):

@@ -17,11 +17,12 @@ def _fernet(passphrase):
 
 class State:
     def __init__(self, path, passphrase):
-        self.path, self.f, self.jobs = path, _fernet(passphrase), {}
+        self.path, self.f, self.jobs, self.meta = path, _fernet(passphrase), {}, {}
         if os.path.exists(path) and os.path.getsize(path):
             try:
                 with open(path, "rb") as fh:
-                    self.jobs = json.loads(self.f.decrypt(fh.read()))["jobs"]
+                    data = json.loads(self.f.decrypt(fh.read()))
+                self.jobs, self.meta = data["jobs"], data.get("meta", {})
             except InvalidToken:
                 raise SystemExit("Cannot decrypt saved state: state_key changed. "
                                  "Restore the old key or delete the bot-state branch to start over.")
@@ -48,5 +49,5 @@ class State:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         tmp = self.path + ".tmp"
         with open(tmp, "wb") as fh:
-            fh.write(self.f.encrypt(json.dumps({"jobs": self.jobs}).encode()))
+            fh.write(self.f.encrypt(json.dumps({"jobs": self.jobs, "meta": self.meta}).encode()))
         os.replace(tmp, self.path)  # atomic: a crash never leaves a half-written file

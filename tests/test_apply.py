@@ -67,7 +67,7 @@ def test_greenhouse_like_submits_with_llm(browser, profile, job, pdf):
     assert data == {"first": "Jane", "last": "Doe", "email": "jane.doe@example.com", "phone": "+1 555 010 0199",
                     "linkedin": "https://www.linkedin.com/in/janedoe-example", "auth": "1",
                     "sponsor": "No, I will not require sponsorship", "why": "I enjoy payment systems.",
-                    "consent": True, "gender": "d", "resume": "Jane_Doe_Resume.pdf", "cover": 0}
+                    "consent": True, "gender": "d", "years": "c", "policy": "y", "resume": "Jane_Doe_Resume.pdf", "cover": 0}
     assert outcome.llm_answers == [("Why do you want to work here?", "I enjoy payment systems.")]
 
 

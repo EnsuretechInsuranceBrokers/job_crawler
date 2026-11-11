@@ -157,6 +157,74 @@ def test_cover_letter_template_and_llm_guard(profile, job):
     assert cover_letter(profile, tailored, job, FakeLLM(honest.replace("six years", "15 years")))[1] is False
 
 
+def test_location_dependent_answers(profile, job):
+    profile["answers"] = {"authori[sz]ed to work": {"india|mumbai|bengaluru": "Yes", "default": "No"},
+                          "sponsor": {"india|mumbai|bengaluru": "No", "default": "Yes"}}
+    q = "Are you authorized to work in the country for which you applied?"
+    assert rule_answer(q, profile, job) == "No"                       # job is in the United States
+    assert rule_answer("Will you require sponsorship?", profile, job) == "Yes"
+    job.location = "Bengaluru, Karnataka"
+    assert rule_answer(q, profile, job) == "Yes"
+    assert rule_answer("Will you require sponsorship?", profile, job) == "No"
+    assert rule_answer("Please provide the name of your current (or most recent) company", profile) == "Acme Payments"
+    assert rule_answer("What is your current country of residence?", profile) == "United States"
+
+
+def test_pick_option_ranges_consent_synonyms():
+    years = [{"text": "0-2 years"}, {"text": "3-5 years"}, {"text": "6-10 years"}, {"text": "10+ years"}]
+    assert [pick_option(str(n), years) for n in (1, 2, 4, 6, 15)] == [0, 0, 1, 2, 3]
+    assert pick_option("3", [{"text": "Less than 1 year"}, {"text": "1 to 4 years"}, {"text": "More than 4 years"}]) == 1
+    assert pick_option("consent", [{"text": "Select..."}, {"text": "I agree"}]) == 1
+    assert pick_option("consent", [{"text": "No"}, {"text": "Maybe"}]) is None
+    assert pick_option("Male", [{"text": "Woman"}, {"text": "Man"}, {"text": "Non-binary"}]) == 1
+
+
+def test_remote_regions(profile):
+    profile["search"].update(locations=["india"], remote_ok=True, remote_regions=["india", "apac", "asia"])
+    mk = lambda loc: Job("x", "1", "A", "Software Engineer", loc, "", "python", remote=True)  # noqa: E731
+    assert score_job(mk("Remote - US"), profile) == 0
+    assert score_job(mk("Remote, Canada"), profile) == 0
+    assert score_job(mk("Remote"), profile) > 0
+    assert score_job(mk("Remote (APAC)"), profile) > 0
+    assert score_job(mk("Pune, India"), profile) > 0
+    del profile["search"]["remote_regions"]
+    assert score_job(mk("Remote - US"), profile) > 0
+
+
+def test_llm_json_tolerance():
+    from jobbot.llm import _json_part
+    assert json.loads(_json_part('```json\n{"a": 1}\n```')) == {"a": 1}
+    assert json.loads(_json_part('Here you go: {"a": {"b": 2}} hope it helps')) == {"a": {"b": 2}}
+
+
+def test_telegram_and_ntfy(monkeypatch, profile, job, tmp_path):
+    from jobbot import notify
+    from jobbot.models import Outcome
+    calls = []
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"result": [{"message": {"chat": {"id": 42, "type": "private"}}}]}
+
+    monkeypatch.setattr(notify.requests, "get", lambda url, **kw: calls.append(("get", url, kw)) or Resp())
+    monkeypatch.setattr(notify.requests, "post", lambda url, **kw: calls.append(("post", url, kw)) or Resp())
+    pdf = tmp_path / "r.pdf"
+    pdf.write_bytes(b"%PDF-")
+    state = State(str(tmp_path / "s.enc"), "k")
+    profile["telegram"] = {"token": "T"}
+    profile["ntfy"] = {"topic": "secret-topic"}
+    assert notify.alert(profile, job, Outcome("captcha"), [str(pdf)], state)
+    urls = [c[1] for c in calls]
+    assert urls == ["https://api.telegram.org/botT/getUpdates", "https://api.telegram.org/botT/sendMessage",
+                    "https://api.telegram.org/botT/sendDocument", "https://ntfy.sh/secret-topic"]
+    assert calls[1][2]["json"]["chat_id"] == 42 and state.meta["telegram_chat_id"] == 42
+    calls.clear()
+    notify.send(profile, "again", state=state)
+    assert "getUpdates" not in calls[0][1]  # chat id remembered
+
+
 def test_whatsapp_log_and_alert(monkeypatch, profile, job):
     from jobbot import notify
     from jobbot.models import Outcome
@@ -166,6 +234,7 @@ def test_whatsapp_log_and_alert(monkeypatch, profile, job):
         status_code = 200
 
     monkeypatch.setattr(notify.requests, "get", lambda url, timeout, params: sent.append(params) or Resp())
+    profile.pop("smtp", None)
     assert notify.daily_log(profile, [], False, 0) is False  # not configured -> silent no-op
     profile["whatsapp"] = {"phone": "+1 555 010 0199", "apikey": "k"}
     assert notify.alert(profile, job, Outcome("captcha"))
