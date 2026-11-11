@@ -41,6 +41,23 @@ jobs:
       - run: |
           pip install -q -r requirements.txt
           playwright install chromium   # runner image already has the system libraries; no apt needed
+      - name: Model endpoint diagnostics (temporary)
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          body='{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"Say hi"}]}'
+          for v in 2022-11-28 2026-03-10; do
+            echo "== POST inference, api version $v"
+            curl -sS -i -m 60 -X POST https://models.github.ai/inference/chat/completions \
+              -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: $v" -H "Content-Type: application/json" -d "$body" | head -c 1500; echo
+          done
+          echo "== POST without version header"
+          curl -sS -i -m 60 -X POST https://models.github.ai/inference/chat/completions \
+            -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" -d "$body" | head -c 1500; echo
+          echo "== GET catalog"
+          curl -sS -i -m 60 https://models.github.ai/catalog/models -H "Authorization: Bearer $GITHUB_TOKEN" | head -c 700; echo
       - run: python -m jobbot --demo --limit 6
         env:
           GITHUB_TOKEN: ${{ github.token }}

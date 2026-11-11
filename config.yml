@@ -19,11 +19,10 @@ sources:
                cohesity, zscaler, nutanix, sprinklr, tekion, chargebee, moengage,
                clevertap, uniphore, observeai, mindtickle, whatfix, yellowai]
   lever: [palantir, spotify, veeva, outreach,
-          cred, meesho, zepto, upstox, paytm, sharechat, spinny, dream11,
-          jupiter, khatabook, cars24, rapido, leadsquared, zeta]
+          cred, meesho, paytm, zeta]
   ashby: [ramp, notion, linear, openai, posthog, supabase, replit, vanta,
           elevenlabs, cohere, zapier,
-          atlan, plane, sarvam, portkey, composio, juspay, kreditbee]
+          atlan, plane, sarvam, composio]
   # Free aggregator APIs. Their jobs link to arbitrary sites, so matches are
   # tailored and put in your report for a manual click, not auto-submitted.
   remotive: true
