@@ -50,7 +50,7 @@ jobs:
         if: steps.setup.outputs.ready
         run: |
           pip install -q -r requirements.txt
-          playwright install --with-deps chromium
+          playwright install chromium   # runner image already has the system libraries; no apt needed
 
       - name: Restore encrypted state
         if: steps.setup.outputs.ready

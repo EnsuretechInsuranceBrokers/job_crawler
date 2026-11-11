@@ -20,7 +20,7 @@ jobs:
           cache: pip
       - run: |
           pip install -q -r requirements.txt pytest
-          playwright install --with-deps chromium
+          playwright install chromium   # runner image already has the system libraries; no apt needed
       - run: python -m pytest -q
 
   live-demo:
@@ -38,7 +38,7 @@ jobs:
           cache: pip
       - run: |
           pip install -q -r requirements.txt
-          playwright install --with-deps chromium
+          playwright install chromium   # runner image already has the system libraries; no apt needed
       - run: python -m jobbot --demo --limit 6
         env:
           GITHUB_TOKEN: ${{ github.token }}
