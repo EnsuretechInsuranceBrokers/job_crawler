@@ -1,0 +1,38 @@
+name: notify
+
+# Sends one WhatsApp message to the owner using the credentials inside the
+# PROFILE_YAML secret. Used for maintenance notices ("the bot is ready", "a
+# site changed and was fixed"). The text is visible in the public run page, so
+# it must never contain personal data.
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Text to send (public - no personal data)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q requests PyYAML
+      - name: Send
+        env:
+          PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
+          MESSAGE: ${{ inputs.message }}
+        run: |
+          python - <<'PY'
+          import os, sys, yaml
+          from jobbot.notify import whatsapp
+          profile = yaml.safe_load(os.environ.get("PROFILE_YAML") or "") or {}
+          sys.exit(0 if whatsapp(profile, os.environ["MESSAGE"]) else "WhatsApp is not configured or the message was rejected")
+          PY
