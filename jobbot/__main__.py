@@ -72,6 +72,9 @@ def run(args):
                 letter, _ = cover_letter(profile, tailored, job, llm)
                 with open(os.path.join(job_dir, "cover_letter.txt"), "w") as f:
                     f.write(letter)
+                if auto and not dry:
+                    state.record(job, "attempting")
+                    state.save()
                 letter_pdf = render_letter_pdf(browser, tailored, letter, os.path.join(job_dir, letter_name))
                 outcome = apply_to(context, job, profile, pdf, acfg, llm, dry, cover=(letter_pdf, letter)) if auto else \
                     Outcome("manual", "site is not auto-appliable")
@@ -81,6 +84,7 @@ def run(args):
             results.append((job, outcome, pdf, used_llm))
             if not dry:
                 state.record(job, outcome.status)
+                state.save()  # after every job, so a later crash loses nothing
                 notify.alert(profile, job, outcome)
                 if auto and n < len(chosen):
                     time.sleep(acfg.get("delay_seconds", 20))

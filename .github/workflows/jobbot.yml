@@ -55,9 +55,15 @@ jobs:
       - name: Restore encrypted state
         if: steps.setup.outputs.ready
         run: |
+          # The state is what stops the bot applying twice. If the branch exists but
+          # cannot be read, fail the run rather than start with an empty memory.
           mkdir -p .state
-          if git fetch -q --depth=1 origin bot-state 2>/dev/null; then
+          if git ls-remote --exit-code --heads origin bot-state >/dev/null; then
+            git fetch -q --depth=1 origin bot-state
             git show FETCH_HEAD:state.enc > .state/state.enc
+            test -s .state/state.enc
+          elif [ $? -ne 2 ]; then
+            echo "::error::could not reach the repository to read saved state"; exit 1
           fi
 
       - name: Crawl, tailor, apply

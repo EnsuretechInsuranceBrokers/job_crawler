@@ -32,7 +32,10 @@ def score_job(job, profile, max_age_days=0):
 
 def role_key(job):
     """Same role posted in several cities should only be applied to once."""
-    return norm(job.company) + "|" + re.sub(r"\(.*?\)", "", norm(job.title)).strip()
+    company = re.sub(r"\b(inc|llc|ltd|pvt|gmbh|corp|co)\b", "", norm(job.company))
+    company = re.sub(r"[^a-z0-9]", "", company)  # "Scale AI" (aggregator) == "Scaleai" (board token)
+    title = re.sub(r"\(.*?\)", "", job.title).split(" - ")[0]  # drop "(Remote)" / " - Berlin" suffixes
+    return company + "|" + norm(title)
 
 
 def select(jobs, profile, cfg, seen):

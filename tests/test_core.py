@@ -180,3 +180,21 @@ def test_whatsapp_log_and_alert(monkeypatch, profile, job):
     many = [(job, Outcome("manual"), None, False)] * 80
     notify.daily_log(profile, many, True, 0)
     assert len(sent) == 4 and all(len(p["text"]) < 1000 for p in sent) and "DRY RUN" in sent[0]["text"]
+
+
+def test_no_duplicate_applications(tmp_path, job):
+    path = str(tmp_path / "s.enc")
+    s = State(path, "k")
+    s.record(job, "attempting")   # written before submit
+    s.save()
+    assert State(path, "k").seen(job)          # a crash mid-submit still blocks a second application
+    s.record(job, "submitted")
+    s.save()
+    again = State(path, "k")
+    assert again.jobs[job.key]["status"] == "submitted" and again.jobs[job.key]["tries"] == 1
+    # same role seen through another source, city or company spelling
+    for twin in (Job("remotive", "9", "Initech Inc.", "Senior Backend Engineer (Remote)", "Anywhere", "u"),
+                 Job("ashby", "z", "initech", "Senior Backend Engineer - Berlin", "Berlin", "u"),
+                 Job("greenhouse", "555", "Initech", "Senior Backend Engineer", "Pune", "u", board="initech")):
+        assert again.seen(twin), twin
+    assert not again.seen(Job("greenhouse", "7", "Initech", "Data Engineer", "Pune", "u", board="initech"))

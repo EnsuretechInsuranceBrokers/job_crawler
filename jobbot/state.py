@@ -35,14 +35,18 @@ class State:
         return any(v.get("role") == role_key(job) and final(v) for v in self.jobs.values())
 
     def record(self, job, status):
+        """Remember a job. "attempting" is written BEFORE a form is submitted, so a run that
+        dies mid-application can never apply to the same job again on the next run."""
         from .match import role_key
-        self.jobs[job.key] = {"status": status, "ts": int(time.time()), "role": role_key(job),
-                              "tries": self.jobs.get(job.key, {}).get("tries", 0) + 1,
+        tries = self.jobs.get(job.key, {}).get("tries", 0) + (status != "attempting")
+        self.jobs[job.key] = {"status": status, "ts": int(time.time()), "role": role_key(job), "tries": tries,
                               "title": job.title, "company": job.company, "url": job.url}
 
     def save(self):
         cutoff = time.time() - KEEP_DAYS * 86400
         self.jobs = {k: v for k, v in self.jobs.items() if v["ts"] >= cutoff}
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-        with open(self.path, "wb") as fh:
+        tmp = self.path + ".tmp"
+        with open(tmp, "wb") as fh:
             fh.write(self.f.encrypt(json.dumps({"jobs": self.jobs}).encode()))
+        os.replace(tmp, self.path)  # atomic: a crash never leaves a half-written file
