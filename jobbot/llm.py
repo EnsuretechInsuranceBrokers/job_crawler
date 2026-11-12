@@ -149,16 +149,14 @@ def _gemini_call(self, system, user, as_json):
     if not getattr(self, "_models", None):
         self._models = _gemini_models(self)
     last = None
-    for model in list(self._models):
+    order = list(self._models)
+    for n, model in enumerate(order + order[:1]):  # after a full pass, one more try of the preferred model
         r = None
+        if n == len(order):
+            time.sleep(20)  # every model was busy or rate-limited: give the per-minute limit a moment
         try:
-            for attempt in (1, 2):
-                r = requests.post(f"{self.base}/models/{model}:generateContent", json=body, timeout=45,
-                                  headers={"x-goog-api-key": str(self.key), "Content-Type": "application/json"})
-                if r.status_code == 429 and attempt == 1:
-                    time.sleep(20)  # per-minute limit: one pause, then try again
-                    continue
-                break
+            r = requests.post(f"{self.base}/models/{model}:generateContent", json=body, timeout=45,
+                              headers={"x-goog-api-key": str(self.key), "Content-Type": "application/json"})
             if r.status_code in (401, 403):
                 break  # a key problem: no other model will help
             if r.status_code >= 400:

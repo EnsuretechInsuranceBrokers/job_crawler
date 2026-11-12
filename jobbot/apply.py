@@ -551,6 +551,7 @@ class FormFiller:
                         answered.add(jb)
                         self.filled += 1
                         self.llm_used.append((f["label"], a))
+                        detail(f"model answered '{f['label'][:70]}' -> {a[:90]!r}")
                 except Exception:  # noqa: BLE001
                     pass
             open_fields = still_open()
