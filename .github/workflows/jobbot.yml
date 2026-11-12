@@ -3,6 +3,11 @@ name: jobbot
 on:
   schedule:
     - cron: "37 3 * * *"   # every day 03:37 UTC (09:07 IST)
+  # Preview: a pull request from this repository (never a fork - forks get no secrets)
+  # runs the bot in forced dry-run mode on a few jobs, so a change can be seen
+  # working, emails included, before it is merged.
+  pull_request:
+    paths: [".github/workflows/jobbot.yml", "jobbot/**", "templates/**", "config.yml", "profile.enc"]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -10,7 +15,6 @@ on:
         type: boolean
         default: false
 
-# Only schedule/manual triggers: pull requests from forks can never reach the secret.
 permissions:
   contents: write   # save encrypted state to the bot-state branch
   actions: write    # keep the schedule alive
@@ -22,11 +26,12 @@ concurrency:
 
 jobs:
   run:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
       PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
-      JOBBOT_KEY: ${{ secrets.JOBBOT_KEY }}
+      JOBBOT_KEY: ${{ secrets.JOBBOT_KEY || vars.JOBBOT_KEY }}   # a secret is safer; a variable also works
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Check setup
@@ -70,8 +75,8 @@ jobs:
       - name: Crawl, tailor, apply
         if: steps.setup.outputs.ready
         env:
-          JOBBOT_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
-        run: python -m jobbot
+          JOBBOT_DRY_RUN: ${{ (inputs.dry_run || github.event_name == 'pull_request') && '1' || '' }}
+        run: python -m jobbot ${{ github.event_name == 'pull_request' && '--limit 12' || '' }}
 
       - name: Save encrypted state
         if: always() && steps.setup.outputs.ready && hashFiles('.state/state.enc') != ''

@@ -28,7 +28,7 @@ jobs:
       - name: Send
         env:
           PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
-          JOBBOT_KEY: ${{ secrets.JOBBOT_KEY }}
+          JOBBOT_KEY: ${{ secrets.JOBBOT_KEY || vars.JOBBOT_KEY }}
           MESSAGE: ${{ inputs.message }}
         run: |
           python - <<'PY'

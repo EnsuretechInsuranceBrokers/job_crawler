@@ -155,6 +155,32 @@ def _last(p):
     return p["experience"][0] if p.get("experience") else {}
 
 
+def _edu(p):
+    return p["education"][0] if p.get("education") else {}
+
+
+def _degree(p):
+    d = str(_edu(p).get("degree", ""))
+    for level, key in (("Bachelor", r"\bb\.? ?(s|sc|a|e|tech|eng)\b|bachelor"), ("Master", r"\bm\.? ?(s|sc|a|e|tech|eng|ba)\b|master"),
+                       ("Doctor", r"ph\.? ?d|doctor")):
+        if re.search(key, d, re.I):
+            return [f"{level}'s Degree", f"{level}'s", f"{level}s", f"{level} of Science", f"{level}", d]
+    return d or None
+
+
+def _field(p):
+    e = _edu(p)
+    if e.get("field"):
+        return e["field"]
+    m = re.search(r"\bin ([A-Z][A-Za-z&]+(?: [A-Z&][A-Za-z&]*)*)", str(e.get("degree", "")))
+    return m.group(1) if m else None
+
+
+def _year(p, which):
+    years = re.findall(r"(?:19|20)\d\d", str(_edu(p).get("year", "")))
+    return years[which] if years else None
+
+
 BUILTIN = [  # (regex on short label, profile -> answer); first match wins
     (r"first name|given name|forename", lambda p: p["name"].split()[0]),
     (r"last name|family name|surname", lambda p: " ".join(p["name"].split()[1:]) or p["name"]),
@@ -167,11 +193,23 @@ BUILTIN = [  # (regex on short label, profile -> answer); first match wins
     (r"twitter|\bx\.com", lambda p: p["links"].get("twitter")),
     (r"portfolio|website|personal site|blog|other (link|url)", lambda p: p["links"].get("website")),
     (r"(current|present|most recent|latest).{0,25}(company|employer)|^org|^company( name)?$", lambda p: _last(p).get("company")),
-    (r"current (job )?(title|role|position)|^title$|^job title", lambda p: _last(p).get("title")),
+    (r"(current|present|most recent|previous|latest).{0,25}(title|role|position|designation)|^title$|^job title", lambda p: _last(p).get("title")),
+    (r"^school|^university|^college|^institution|school name|university name", lambda p: str(_edu(p).get("school", "")).split(",")[0] or None),
+    (r"^degree", _degree),
+    (r"^discipline|^major|field of study|area of study|specialization", _field),
+
     (r"^(home |current |mailing |postal |permanent |residential )?address", lambda p: p.get("address") or p.get("location")),
-    (r"^country|country of residence|country.{0,20}(live|reside|based|located)|which country", lambda p: p.get("country") or (p.get("location") or "").split(",")[-1].strip()),
-    (r"^(current |your )?(location|city)|where are you (currently )?(based|located|living)|city.*(live|reside)",
+    (r"^country|country of residence|country.{0,40}(live|reside|based|located)|which country", lambda p: p.get("country") or (p.get("location") or "").split(",")[-1].strip()),
+    (r"^(current |your |present )?(job |work )?(location|city)|where are you (currently )?(based|located|living)|city.*(live|reside)",
      lambda p: p.get("location")),
+]
+
+
+# Structured fields that must win over the user's free-form patterns
+# ("Start date year" is an education year, not "when can you start").
+STRUCTURED = [
+    (r"^start (date )?year", lambda p: _year(p, 0)),
+    (r"^end (date )?year|graduation year|year of graduation", lambda p: _year(p, -1)),
 ]
 
 
@@ -181,6 +219,10 @@ def rule_answer(label, profile, job=None):
     A user answer may depend on where the job is: {"india|mumbai": "Yes", "default": "No"} -
     keys are regexes matched against the job location.
     """
+    for pattern, fn in STRUCTURED:
+        if re.search(pattern, label, re.I):
+            value = fn(profile)
+            return str(value) if value else None
     for pattern, answer in (profile.get("answers") or {}).items():
         try:
             if not re.search(pattern, label, re.I):
@@ -202,6 +244,8 @@ def rule_answer(label, profile, job=None):
         for pattern, fn in BUILTIN:
             if re.search(pattern, label, re.I):
                 value = fn(profile)
+                if isinstance(value, list):
+                    return [str(v) for v in value if v]
                 return str(value) if value else None
     return None
 
@@ -222,22 +266,39 @@ def _duration(answer, options_text):
     return None
 
 
-def _in_range(x, text):
-    """Does the number x fall in an option like '3-5 years', '10+', 'less than 1 year'?"""
+def _bounds(text):
+    """Numeric range an option describes: '3-5 years' -> (3, 5), '10+' -> (10, inf), '30 days or less' -> (0, 30)."""
     t = text.lower().replace(",", "")
-    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|\u2013|\u2014|to)\s*(\d+(?:\.\d+)?)", t)
+    num = r"(\d+(?:\.\d+)?)"
+    inf = float("inf")
+    m = re.search(num + r"\s*(?:-|\u2013|\u2014|to)\s*" + num, t)
     if m:
-        return float(m.group(1)) <= x <= float(m.group(2))
-    m = re.search(r"(\d+(?:\.\d+)?)\s*\+|(?:at least|minimum of)\s*(\d+(?:\.\d+)?)", t)
+        return float(m.group(1)), float(m.group(2))
+    m = re.search(num + r"\s*\+|(?:at least|minimum of)\s*" + num + "|" + num + r"\s*\w*\s*or (?:more|greater|above)", t)
     if m:
-        return x >= float(m.group(1) or m.group(2))
-    m = re.search(r"(?:more than|over|greater than)\s*(\d+(?:\.\d+)?)", t)
+        return float(next(g for g in m.groups() if g)), inf
+    m = re.search(r"(?:more than|over|greater than|above)\s*" + num, t)
     if m:
-        return x > float(m.group(1))
-    m = re.search(r"(?:less than|under|fewer than|below)\s*(\d+(?:\.\d+)?)", t)
+        return float(m.group(1)) + 1e-9, inf
+    m = re.search(num + r"\s*\w*\s*or (?:less|fewer|below)|(?:up to|within|maximum of)\s*" + num, t)
     if m:
-        return x < float(m.group(1))
-    return False
+        return 0.0, float(next(g for g in m.groups() if g))
+    m = re.search(r"(?:less than|under|fewer than|below)\s*" + num, t)
+    if m:
+        return 0.0, float(m.group(1)) - 1e-9
+    if re.search(r"\bimmediate", t):
+        return 0.0, 0.0
+    return None
+
+
+def _range_pick(x, options):
+    """Index of the tightest option range containing x ('15 days or less' beats '90 days or less')."""
+    best = None
+    for i, o in enumerate(options):
+        b = _bounds(o["text"])
+        if b and b[0] <= x <= b[1] and (best is None or b[1] - b[0] < best[0]):
+            best = (b[1] - b[0], i)
+    return best[1] if best else None
 
 
 def pick_option(answer, options):
@@ -259,8 +320,7 @@ def pick_option(answer, options):
              lambda t: re.search(r"(?<![a-z0-9])" + re.escape(a) + r"(?![a-z0-9])", t) is not None)
     for n, test in enumerate(tests):
         if n == 2 and number is not None:  # "2" must mean the range holding 2, not any option containing a 2
-            hits = [i for i, o in enumerate(options) if _in_range(number, o["text"])]
-            return hits[0] if hits else None
+            return _range_pick(number, options)
         hits = [i for i, t in enumerate(texts) if t and test(t)]
         if len(hits) == 1 or (hits and n == 0):
             return hits[0]
@@ -313,38 +373,56 @@ class FormFiller:
             self.page.evaluate("jb => document.querySelector('[data-jb=\"' + jb + '\"]').click()", jb)
 
     def _combobox(self, f, answer):
+        """react-select style dropdown / autocomplete. Never raises: returns whether a value was chosen."""
         box = self.loc(f["jb"])
-        box.click(timeout=5000)
-        self.page.wait_for_timeout(400)
         opts = self.page.locator('[role="option"]:visible')
+        step = "open"
+        try:
+            try:
+                box.click(timeout=4000)
+            except Exception:  # noqa: BLE001 - covered by a placeholder or label: open it from the keyboard
+                box.focus(timeout=3000)
+                self.page.keyboard.press("ArrowDown")
+            self.page.wait_for_timeout(400)
 
-        def choose():
-            texts = [{"text": t} for t in opts.all_inner_texts()]
-            i = pick_option(answer, texts)
-            if i is not None:
-                opts.nth(i).click()
+            def choose():
+                texts = [{"text": t} for t in opts.all_inner_texts()]
+                f["seen_options"] = [t["text"][:30] for t in texts[:8]]
+                i = pick_option(answer, texts)
+                if i is not None:
+                    opts.nth(i).click(timeout=4000)
+                    return True
+                return False
+
+            step = "choose"
+            if choose():
                 return True
-            return False
-
-        if choose():
-            return True
-        if norm(answer) in ("decline", "consent"):
-            self.page.keyboard.press("Escape")
-            return False
-        # Autocomplete (city, school, ...): type, wait for suggestions, take the best one.
-        # Try the full answer, then just its first part ("Austin, TX, United States" -> "Austin").
-        for typed in dict.fromkeys([answer[:60], answer.split(",")[0].strip()[:60]]):
-            box.fill(typed)
-            for _ in range(8):
-                self.page.wait_for_timeout(500)
+            if norm(answer) in ("decline", "consent"):
+                self.page.keyboard.press("Escape")
+                return False
+            # Autocomplete (city, school, ...): type, wait for suggestions, take the best one.
+            # Try the full answer, then just its first part ("Austin, TX, United States" -> "Austin").
+            for typed in dict.fromkeys([answer[:60], answer.split(",")[0].strip()[:60]]):
+                step = f"type {len(typed)} chars"
+                box.fill(typed, timeout=4000)
+                for _ in range(8):
+                    self.page.wait_for_timeout(500)
+                    if opts.count():
+                        break
                 if opts.count():
-                    break
-            if opts.count():
-                if not choose():
-                    opts.first.click()
-                return True
-        self.page.keyboard.press("Escape")
-        box.fill("")
+                    step = "pick suggestion"
+                    if not choose():
+                        opts.first.click(timeout=4000)
+                    return True
+            step = "close"
+            self.page.keyboard.press("Escape")
+            box.fill("", timeout=3000)
+        except Exception as e:  # noqa: BLE001
+            detail(f"dropdown '{f['label'][:40]}' failed at step '{step}': {type(e).__name__}")
+            try:
+                self.page.keyboard.press("Escape")
+            except Exception:  # noqa: BLE001
+                pass
         return False
 
     def put(self, f, answer):

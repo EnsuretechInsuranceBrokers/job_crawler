@@ -30,13 +30,14 @@ sources:
 
 match:
   min_score: 0.55        # 0.5 = title matches, +0.5 scaled by skill overlap
-  max_age_days: 21
+  max_age_days: 60       # ignore postings older than this
 
 apply:
   dry_run: true          # true: fill forms but never press submit. Flip to false when the report looks right.
   max_per_run: 29        # auto-apply attempts per run (daily run -> about 203 a week)
   max_manual_per_run: 10 # tailored "apply yourself" packets per run
   max_per_company: 2     # per run, so one employer is not flooded
+  reapply_after_days: 7  # a still-open job may be applied to again after this many days; 0 = never twice
   accept_consent: true   # tick required privacy/consent checkboxes
   delay_seconds: 20      # pause between applications
 

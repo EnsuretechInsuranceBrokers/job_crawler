@@ -360,10 +360,15 @@ def test_workflow_files_are_valid():
             for step in job["steps"]:
                 assert ("run" in step) != ("uses" in step), f"{path}:{name}: {step}"
                 assert all(isinstance(v, str) for v in (step.get("env") or {}).values()), f"{path}:{name}"
-    # the bot must never be reachable from fork pull requests, which could read its secrets
-    for wf_name in ("jobbot.yml", "notify.yml"):
-        on = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", wf_name)))[True]
-        assert set(on) <= {"schedule", "workflow_dispatch"}, wf_name
+    # Secrets must stay out of reach of outsiders: never pull_request_target, and the
+    # pull_request preview is restricted to branches of this repository and forced to dry-run.
+    bot = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "jobbot.yml")))
+    assert set(bot[True]) <= {"schedule", "workflow_dispatch", "pull_request"}
+    assert "head.repo.full_name == github.repository" in bot["jobs"]["run"]["if"]
+    run_step = next(s for s in bot["jobs"]["run"]["steps"] if s.get("name") == "Crawl, tailor, apply")
+    assert "github.event_name == 'pull_request'" in run_step["env"]["JOBBOT_DRY_RUN"]
+    note = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "notify.yml")))
+    assert set(note[True]) <= {"workflow_dispatch"}
 
 
 def test_github_inbox_keeps_details_private(monkeypatch, profile, job, tmp_path):
@@ -404,3 +409,33 @@ def test_github_inbox_keeps_details_private(monkeypatch, profile, job, tmp_path)
     profile["github_inbox"] = {"details": True}
     notify.alert(profile, job, Outcome("captcha"), state=state)
     assert "Initech" in posts[-1][1]["body"]
+
+
+def test_weekly_reapply(tmp_path, job):
+    s = State(str(tmp_path / "s.enc"), "k")
+    s.record(job, "attempting")
+    s.record(job, "submitted")
+    assert s.seen(job) and s.seen(job, reapply_days=7)          # same week: never twice
+    s.jobs[job.key]["ts"] -= 8 * 86400
+    assert s.seen(job) and not s.seen(job, reapply_days=7)      # a week later: eligible again
+    twin = Job("ashby", "z", "initech", "Senior Backend Engineer - Pune", "Pune", "u")
+    assert not s.seen(twin, reapply_days=7)
+    s.record(job, "attempting")
+    s.record(job, "submitted")
+    assert s.jobs[job.key]["rounds"] == 2 and s.seen(job, reapply_days=7) and s.seen(twin, reapply_days=7)
+
+
+def test_education_and_tight_ranges(profile):
+    assert rule_answer("School", profile) == "University of Texas at Austin"
+    assert rule_answer("Degree", profile)[0] == "Bachelor's Degree"
+    assert pick_option("Bachelor's Degree", [{"text": "High School"}, {"text": "Bachelor's Degree"}, {"text": "Master's Degree"}]) == 1
+    assert rule_answer("Start date year", profile) == rule_answer("End date year", profile) == "2018"
+    profile["education"][0].update(degree="B.S. in Computer Science (4-year program)", year="Aug 2021 - Aug 2025")
+    assert rule_answer("Discipline", profile) == "Computer Science"
+    assert (rule_answer("Start date year", profile), rule_answer("End date year", profile)) == ("2021", "2025")
+    assert rule_answer("What is your current or previous job title?", profile) == "Senior Software Engineer"
+    assert rule_answer("Current job location?", profile) == "Austin, TX, United States"
+    assert rule_answer("Please select the country where you currently reside.", profile) == "United States"
+    notice = [{"text": t} for t in ("90 days or less", "60 days or less", "45 days or less", "30 days or less", "15 days or less", "Immediate")]
+    assert pick_option("2 weeks", notice) == 4 and pick_option("5 weeks", notice) == 2 and pick_option("0 days", notice) == 5
+    assert pick_option("2", [{"text": "1-3"}, {"text": "3-5"}, {"text": "5+"}]) == 0

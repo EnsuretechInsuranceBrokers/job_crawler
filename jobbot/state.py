@@ -27,20 +27,35 @@ class State:
                 raise SystemExit("Cannot decrypt saved state: state_key changed. "
                                  "Restore the old key or delete the bot-state branch to start over.")
 
-    def seen(self, job):
+    def seen(self, job, reapply_days=0):
+        """Has this job (or the same role elsewhere) been handled?
+
+        With reapply_days > 0 a job becomes eligible again once that many days have
+        passed since it was last handled; 0 means never apply twice.
+        """
         from .match import role_key
-        def final(v):  # errors get one retry on a later run
-            return v["status"] != "error" or v.get("tries", 1) >= 2
+        now = time.time()
+
+        def blocks(v):
+            if v["status"] == "error" and v.get("tries", 1) < 2:
+                return False  # errors get one retry on a later run
+            return not reapply_days or now - v["ts"] < reapply_days * 86400
+
         if job.key in self.jobs:
-            return final(self.jobs[job.key])
-        return any(v.get("role") == role_key(job) and final(v) for v in self.jobs.values())
+            return blocks(self.jobs[job.key])
+        role = role_key(job)
+        return any(v.get("role") == role and blocks(v) for v in self.jobs.values())
 
     def record(self, job, status):
         """Remember a job. "attempting" is written BEFORE a form is submitted, so a run that
         dies mid-application can never apply to the same job again on the next run."""
         from .match import role_key
         tries = self.jobs.get(job.key, {}).get("tries", 0) + (status != "attempting")
+        prev = self.jobs.get(job.key, {})
+        if prev.get("status") not in (None, "attempting", "error") and status == "attempting":
+            tries = 0  # a new weekly round starts
         self.jobs[job.key] = {"status": status, "ts": int(time.time()), "role": role_key(job), "tries": tries,
+                              "rounds": prev.get("rounds", 0) + (status == "submitted"),
                               "title": job.title, "company": job.company, "url": job.url}
 
     def save(self):

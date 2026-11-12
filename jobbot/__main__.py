@@ -35,7 +35,8 @@ def run(args):
     log(f"mode: {'DRY RUN' if dry else 'LIVE'}{' (demo profile)' if args.demo else ''}; "
         f"llm: {'on' if llm.enabled else 'off'}; remembered jobs: {len(state.jobs)}")
 
-    picks = select(crawl(cfg["sources"]), profile, cfg, state.seen)
+    reapply = int(acfg.get("reapply_after_days", 0) or 0)
+    picks = select(crawl(cfg["sources"]), profile, cfg, lambda job: state.seen(job, reapply))
     log(f"new matching jobs: {len(picks)}")
 
     # Choose what to handle this run, best score first, within the caps.
