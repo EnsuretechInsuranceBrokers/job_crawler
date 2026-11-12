@@ -16,8 +16,8 @@ from .util import detail, log
 
 PROVIDERS = {
     # name: (base url, fallback model, ranking of model ids - higher is better, None = unusable)
-    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash",
-               lambda m: _version(m) if re.fullmatch(r"gemini-[\d.]+-flash", m) else None),
+    # Gemini is called through Google's own API (below) with its always-current model alias.
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta", "gemini-flash-latest", None),
     "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile",
              lambda m: (("70b" in m) * 2 + ("versatile" in m), _version(m)) if "llama" in m and "guard" not in m else None),
     "openrouter": ("https://openrouter.ai/api/v1", "meta-llama/llama-3.3-70b-instruct:free",
@@ -40,6 +40,9 @@ class LLM:
         self.enabled = bool(cfg.get("enabled", True) and self.base and self.key)
         self.failures = 0
         self.json_mode = True
+        self.native_gemini = "generativelanguage.googleapis.com" in self.base and not self.base.endswith("/openai")
+        if self.native_gemini and not self.model:
+            self.model = default or "gemini-flash-latest"
 
     def _headers(self):
         return {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
@@ -71,6 +74,8 @@ class LLM:
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
         r, status = None, ""
         try:
+            if self.native_gemini:
+                return self._gemini(system, user, as_json)
             for attempt in (1, 2, 3):
                 if as_json and self.json_mode:
                     body["response_format"] = {"type": "json_object"}
@@ -95,12 +100,39 @@ class LLM:
             return parsed
         except Exception as e:  # noqa: BLE001
             self.failures += 1
+            r = r if r is not None else getattr(e, "response", None)
+            status = status or getattr(r, "status_code", "")
             # error bodies carry no personal data, but only show them in verbose/demo runs anyway
             detail(f"LLM call failed: {type(e).__name__} status={status} body={(r.text[:200] if r is not None else '')!r}")
             if self.failures >= 3 or status in (401, 403, 404):
                 self.enabled = False  # bad key or quota gone: stop trying this run
                 log(f"LLM disabled for this run (status {status}); using keyword tailoring")
             return None
+
+
+def _gemini_call(self, system, user, as_json):
+    """Google's generateContent API, as in their quickstart (key in the x-goog-api-key header)."""
+    body = {"systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {"temperature": 0.2, **({"responseMimeType": "application/json"} if as_json else {})}}
+    for attempt in (1, 2, 3):
+        r = requests.post(f"{self.base}/models/{self.model}:generateContent", json=body, timeout=90,
+                          headers={"x-goog-api-key": str(self.key), "Content-Type": "application/json"})
+        if r.status_code in (429, 503) and attempt < 3:
+            time.sleep(25)  # free tier is limited per minute
+            continue
+        break
+    if r.status_code >= 400:
+        err = requests.HTTPError(f"gemini {r.status_code}")
+        err.response = r
+        raise err
+    text = "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"]).strip()
+    parsed = json.loads(_json_part(text)) if as_json else text
+    self.failures = 0
+    return parsed
+
+
+LLM._gemini = _gemini_call
 
 
 def _json_part(text):

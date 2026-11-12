@@ -309,20 +309,28 @@ def test_llm_picks_model_and_degrades_gracefully(monkeypatch):
         def json(self):
             return self.payload
 
-    models = {"data": [{"id": "models/gemini-2.0-flash"}, {"id": "models/gemini-3.5-flash"}, {"id": "models/gemini-3.5-flash-lite"},
-                       {"id": "models/gemini-9-pro"}, {"id": "models/text-embedding-004"}]}
+    models = {"data": [{"id": "llama-3.1-8b-instant"}, {"id": "llama-3.3-70b-versatile"}, {"id": "llama-guard-4"},
+                       {"id": "whisper-large-v3"}]}
     monkeypatch.setattr(llm_mod.requests, "get", lambda url, **kw: Resp(200, models))
 
-    def post(url, json, timeout, headers, allow_redirects):
-        calls.append((url, json))
+    def post(url, json, timeout, headers, allow_redirects=None):
+        calls.append((url, json, headers))
+        if "generateContent" in url:
+            return Resp(200, {"candidates": [{"content": {"parts": [{"text": '{"ok": '}, {"text": "true}"}]}}]})
         if "response_format" in json:
             return Resp(400, {})                      # this model has no JSON mode
         return Resp(200, {"choices": [{"message": {"content": 'Sure: {"ok": true}'}}]})
 
     monkeypatch.setattr(llm_mod.requests, "post", post)
-    bot = llm_mod.LLM({"enabled": True}, {"llm": {"provider": "gemini", "api_key": "k"}})
+    gem = llm_mod.LLM({"enabled": True}, {"llm": {"provider": "gemini", "api_key": "k"}})
+    assert gem.ask("s", "u", as_json=True) == {"ok": True}
+    url, body, headers = calls[-1]
+    assert url.endswith("/v1beta/models/gemini-flash-latest:generateContent") and headers["x-goog-api-key"] == "k"
+    assert body["generationConfig"]["responseMimeType"] == "application/json" and "Authorization" not in headers
+    calls.clear()
+    bot = llm_mod.LLM({"enabled": True}, {"llm": {"provider": "groq", "api_key": "k"}})
     assert bot.ask("s", "u", as_json=True) == {"ok": True}
-    assert bot.model == "gemini-3.5-flash" and calls[0][0].endswith("/v1beta/openai/chat/completions")
+    assert bot.model == "llama-3.3-70b-versatile" and calls[0][0] == "https://api.groq.com/openai/v1/chat/completions"
     assert len(calls) == 2 and "response_format" not in calls[1][1]
     custom = llm_mod.LLM({}, {"llm": {"base_url": "https://x.test/v1/", "api_key": "k", "model": "m"}})
     assert custom.ask("s", "u") == 'Sure: {"ok": true}' and calls[-1][0] == "https://x.test/v1/chat/completions"
