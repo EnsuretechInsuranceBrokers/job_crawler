@@ -45,7 +45,8 @@ match:
 
 apply:
   dry_run: true          # true: fill forms but never press submit. Flip to false when the report looks right.
-  max_per_run: 29        # auto-apply attempts per run (daily run -> about 203 a week)
+  target_per_run: 29     # COMPLETED applications to reach per run (daily -> about 203 a week)
+  attempt_factor: 3      # try up to this many times the target before giving up for the day
   max_manual_per_run: 10 # tailored "apply yourself" packets per run
   max_per_company: 2     # per run, so one employer is not flooded
   reapply_after_days: 7  # a still-open job may be applied to again after this many days; 0 = never twice

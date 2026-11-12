@@ -31,9 +31,18 @@ def build(results, dry_run, out_dir, asked=None):
     if ready:
         lines += [f"## Would be submitted when live ({len(ready)})", ""] + [row(*r) for r in ready] + [""]
     if todo:
-        lines += [f"## Needs you ({len(todo)})", "", "Open the link, upload the tailored PDF, submit.", ""]
+        lines += [f"## Needs you ({len(todo)})", "",
+                  "Two ways to finish each one:", "",
+                  "1. **Let the bot finish it.** Add the missing answer to `answers:` in your profile and re-seal it. "
+                  "The bot tries the form again on its next run - it does not wait a week.",
+                  "2. **Finish it yourself now.** Open the *apply* link, upload the resume and cover letter from the "
+                  "job's folder, answer the listed questions, submit.", "",
+                  "The bot never waits on these: it moved on to the next job straight away.", ""]
         for job, outcome, pdf, llm in todo:
             lines.append(row(job, outcome, pdf, llm))
+            from .apply import apply_url
+            if apply_url(job):
+                lines.append(f"  - apply: {apply_url(job)}")
             lines.append(f"  - why: {LABELS.get(outcome.status, outcome.status)}"
                          + (f" ({outcome.detail})" if outcome.status in ("error", "unconfirmed") else ""))
             if pdf and os.path.exists(os.path.join(os.path.dirname(pdf), "form.png")):

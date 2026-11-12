@@ -553,3 +553,12 @@ def test_region_restricted_remote_jobs(profile):
     assert score_job(mk("Applicants must be located in the United States."), profile) == 0
     del profile["search"]["remote_regions"]
     assert score_job(mk("Applicants must be located in the United States."), profile) > 0   # no regions set: not filtered
+
+
+def test_stopped_form_is_retried_once_answers_change(tmp_path, job):
+    s = State(str(tmp_path / "s.enc"), "k")
+    s.record(job, "needs_answers", "sig-a")
+    assert s.seen(job, 7, "sig-a")            # nothing new to offer: do not hammer the same form
+    assert not s.seen(job, 7, "sig-b")        # the profile gained an answer: try again now
+    s.record(job, "submitted", "sig-b")
+    assert s.seen(job, 7, "sig-c")            # a submitted application is never redone early
