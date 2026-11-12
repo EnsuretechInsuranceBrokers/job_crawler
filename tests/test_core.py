@@ -504,3 +504,32 @@ def test_number_boxes_never_guess_units():
     assert numeric_answer("2 weeks", "Notice period in weeks") == "2"
     assert numeric_answer("2 weeks", "Notice period (in days)") is None
     assert numeric_answer("Open to discussing", "Expected salary") is None
+
+
+def test_insights_gap_years_and_badge(tmp_path, profile, job):
+    import json as _json
+
+    from jobbot import report
+    from jobbot.insights import TERMS, required_years, skills_gap
+    assert "spring boot" in TERMS and "c++" in TERMS and "c" not in TERMS and "go" not in TERMS
+    job.description = "Need Python, Kafka, Kubernetes, Terraform, Snowflake and Airflow. 8+ years of experience required."
+    other = Job("lever", "2", "B", "Backend Engineer", "Remote", "u", "Python and Snowflake; 2 years of relevant experience", remote=True)
+    gap = skills_gap([job, other], profile)
+    assert dict(gap["missing"])["snowflake"] == 2 and "python" not in dict(gap["missing"]) and dict(gap["wanted"])["python"] == 2
+    assert required_years(job.description) == 8 and required_years(other.description) == 2 and required_years("est. 12 years ago") is None
+    assert score_job(job, profile) > 0
+    profile["search"]["max_required_years"] = 4
+    assert score_job(job, profile) == 0 and score_job(other, profile) > 0
+
+    from jobbot.models import Outcome
+    state = State(str(tmp_path / "s.enc"), "k")
+    report.dashboard(state, [(job, Outcome("needs_answers"), None, False)], True, str(tmp_path), gap)
+    html = open(tmp_path / "dashboard.html").read()
+    assert "Skills gap across 2 matching jobs" in html and "snowflake" in html and "lacks" in html
+    path = str(tmp_path / "badge.json")
+    report.badge(state, True, path)
+    assert _json.load(open(path))["message"] == "dry run"
+    state.record(job, "submitted")
+    report.badge(state, False, path)
+    b = _json.load(open(path))
+    assert b["message"] == "1 this week · 1 total" and "Initech" not in open(path).read() and b["schemaVersion"] == 1

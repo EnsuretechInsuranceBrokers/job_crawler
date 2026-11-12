@@ -1,5 +1,8 @@
 # job_crawler
 
+![applications](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/EnsuretechInsuranceBrokers/job_crawler/bot-state/badge.json)
+![ci](https://github.com/EnsuretechInsuranceBrokers/job_crawler/actions/workflows/ci.yml/badge.svg)
+
 A bot that runs for free on GitHub Actions: it crawls job boards, tailors your
 resume to each matching job, and applies for you where the application form
 allows it. Whatever it cannot submit lands in a short report with the tailored
@@ -130,7 +133,10 @@ Each run uploads `jobbot-report` (an AES-encrypted zip; the password is your
 `state_key`):
 
 - `dashboard.html` – totals, applications per day, outcome of every job in the
-  run, the questions that stop forms most often, and the full history.
+  run with how many of the posting's keywords your resume covers, a **skills
+  gap** panel (what matching jobs ask for most, and what they ask for that your
+  profile never mentions), the questions that stop forms most often, and the
+  full history.
 - `report.md` – the same run as text, with a "Teach the bot" list.
 - one folder per job with the tailored resume and cover letter (PDF and text).
 

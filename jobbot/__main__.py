@@ -39,6 +39,8 @@ def run(args):
     reapply = int(acfg.get("reapply_after_days", 0) or 0)
     picks = select(crawl(cfg["sources"]), profile, cfg, lambda job: state.seen(job, reapply))
     log(f"new matching jobs: {len(picks)}")
+    from .insights import skills_gap
+    gap = skills_gap(picks, profile)
 
     # Choose what to handle this run, best score first, within the caps.
     chosen, per_company, n_auto, n_manual = [], {}, 0, 0
@@ -109,7 +111,9 @@ def run(args):
         for q in o.unanswered:
             asked[q] = asked.get(q, 0) + 1
     text = report.build(results, dry, out_dir, asked)
-    report.dashboard(state, results, dry, out_dir)
+    report.dashboard(state, results, dry, out_dir, gap)
+    if acfg.get("public_badge", True) and not args.demo:
+        report.badge(state, dry, os.path.join(ROOT, ".state", "badge.json"))
     log("results: " + (", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "nothing to do"))
     log(f"resumes tailored by LLM: {sum(1 for r in results if r[3])}/{len(results)}; "
         f"model calls answered: {llm.answered}/{llm.calls}; took {int((time.time() - started) / 60)} min")

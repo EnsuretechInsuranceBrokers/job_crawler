@@ -39,10 +39,20 @@
 <div class="bars">{% for day, n in bars %}<div class="bar"><em>{{ n if n else "" }}</em><i style="height: {{ (n / peak * 100) | round(1) }}%"></i>{{ day }}</div>{% endfor %}</div>
 
 <h2>This run</h2>
-<div class="wrap"><table><tr><th>Role</th><th>Company</th><th>Location</th><th>Match</th><th>Outcome</th><th>AI tailored</th></tr>
+<div class="wrap"><table><tr><th>Role</th><th>Company</th><th>Location</th><th>Match</th><th>Keywords covered</th><th>Outcome</th><th>AI tailored</th></tr>
 {% for r in run %}<tr><td class="t"><a href="{{ r.url }}">{{ r.title }}</a></td><td>{{ r.company }}</td><td>{{ r.location }}</td><td>{{ r.score }}</td>
+<td title="missing: {{ r.lack }}">{{ r.have }} / {{ r.asked }}{% if r.lack %} <span style="color:var(--muted)">· lacks {{ r.lack }}</span>{% endif %}</td>
 <td><span class="pill {{ 'ok' if r.status in ['submitted', 'dry_run_ok'] else 'todo' }}">{{ {"submitted": "submitted", "dry_run_ok": "ready"}.get(r.status, labels.get(r.status, r.status)) }}</span></td><td>{{ "yes" if r.llm else "no" }}</td></tr>
-{% else %}<tr><td colspan="6">No new matching jobs this run.</td></tr>{% endfor %}</table></div>
+{% else %}<tr><td colspan="7">No new matching jobs this run.</td></tr>{% endfor %}</table></div>
+
+{% if gap.jobs %}<h2>Skills gap across {{ gap.jobs }} matching jobs</h2>
+<div class="tiles" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))">
+<div class="tile"><span>Asked for most often</span>
+{% for term, n in gap.wanted %}<div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="width:130px;color:var(--ink)">{{ term }}</span><i style="display:block;height:8px;border-radius:4px;background:var(--accent);width:{{ (n / top_wanted * 55) | round(1) }}%"></i><span>{{ n }}</span></div>{% endfor %}</div>
+<div class="tile"><span>Asked for, but nowhere in your profile</span>
+{% for term, n in gap.missing %}<div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="width:130px;color:var(--ink)">{{ term }}</span><i style="display:block;height:8px;border-radius:4px;background:var(--warn);width:{{ (n / top_wanted * 55) | round(1) }}%"></i><span>{{ n }}</span></div>{% else %}<div style="margin-top:6px">Nothing - your profile mentions everything these postings ask for.</div>{% endfor %}
+<div style="margin-top:10px;font-size:12px">If you do have one of these, add it to <code>skills</code>; the bot never adds a skill you have not listed.</div></div>
+</div>{% endif %}
 
 {% if questions %}<h2>Questions that stop forms most often</h2>
 <ol>{% for q, n in questions %}<li>{{ q }} <span class="pill">{{ n }}×</span></li>{% endfor %}</ol>{% endif %}

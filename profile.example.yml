@@ -62,6 +62,7 @@ search:
   keywords: []            # extra terms to reward besides your skills
   locations: [united states, austin]   # job location must contain one of these; [] = anywhere
   remote_ok: true         # also accept jobs marked remote
+  # max_required_years: 8  # skip postings that ask for more years of experience than this
   # remote_regions: [united states, americas, north america]
   #   optional: a remote job that names a place ("Remote - Canada") must name one of these
 

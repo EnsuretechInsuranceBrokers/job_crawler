@@ -51,6 +51,7 @@ apply:
   reapply_after_days: 7  # a still-open job may be applied to again after this many days; 0 = never twice
   accept_consent: true   # tick required privacy/consent checkboxes
   delay_seconds: 20      # pause between applications
+  public_badge: true     # publish a counts-only badge ("3 this week · 12 total") next to the encrypted state
   max_minutes: 70        # stop starting new applications after this long, so the run always finishes cleanly
 
 llm:

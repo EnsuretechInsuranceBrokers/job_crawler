@@ -30,6 +30,12 @@ def score_job(job, profile, max_age_days=0):
             ok = not regions or bare or any(norm(r) in loc for r in regions)
         if not ok:
             return 0.0
+    limit = search.get("max_required_years")
+    if limit is not None:
+        from .insights import required_years
+        need = required_years(job.description)
+        if need is not None and need > float(limit):
+            return 0.0  # asks for clearly more experience than the profile has
     text = norm(job.title + " " + job.description)
     terms = list(dict.fromkeys(profile["skills"] + (search.get("keywords") or [])))
     hits = sum(1 for t in terms if has_term(t, text))

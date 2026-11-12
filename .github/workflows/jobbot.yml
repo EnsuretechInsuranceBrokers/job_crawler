@@ -84,6 +84,7 @@ jobs:
           cd .state
           git init -q -b bot-state
           git add state.enc
+          if [ -f badge.json ]; then git add badge.json; fi
           git -c user.name=jobbot -c user.email=jobbot@users.noreply.github.com commit -qm "encrypted state"
           git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" bot-state
 

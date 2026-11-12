@@ -53,7 +53,18 @@ def build(results, dry_run, out_dir, asked=None):
     return text
 
 
-def dashboard(state, results, dry_run, out_dir):
+def badge(state, dry_run, path):
+    """Counts-only JSON for a shields.io badge; published next to the encrypted state."""
+    import json
+    week = sum(1 for v in state.jobs.values() if v["status"] == "submitted" and time.time() - v["ts"] < 7 * 86400)
+    total = sum(1 for v in state.jobs.values() if v["status"] == "submitted")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump({"schemaVersion": 1, "label": "applications", "color": "2f6f4f" if total else "lightgrey",
+                   "message": f"{week} this week · {total} total" if total else ("dry run" if dry_run else "none yet")}, f)
+
+
+def dashboard(state, results, dry_run, out_dir, gap=None):
     """Private HTML overview of everything the bot has done; lives inside the encrypted report."""
     from collections import Counter
 
@@ -66,13 +77,21 @@ def dashboard(state, results, dry_run, out_dir):
     per_day = Counter(time.strftime("%d %b", time.gmtime(v["ts"])) for v in jobs if v["status"] == "submitted")
     week = [v for v in jobs if now - v["ts"] < 7 * 86400]
     env = Environment(loader=FileSystemLoader(os.path.join(ROOT, "templates")), autoescape=select_autoescape(["html", "j2"]))
+    from .insights import coverage
+    gap = gap or {"jobs": 0, "missing": [], "wanted": [], "profile_norm": ""}
+    cover = {}
+    for j, _, _, _ in results:
+        have, lack = coverage(j, gap["profile_norm"])
+        cover[j.key] = (len(have), len(have) + len(lack), ", ".join(lack[:6]))
     html = env.get_template("dashboard.html.j2").render(
+        gap=gap, top_wanted=max([n for _, n in gap["wanted"]] + [1]),
         generated=time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), dry_run=dry_run, labels=LABELS,
         totals=Counter(v["status"] for v in jobs), week=Counter(v["status"] for v in week),
         bars=[(d, per_day.get(d, 0)) for d in days], peak=max([per_day.get(d, 0) for d in days] + [1]),
         companies=Counter(v["company"] for v in jobs if v["status"] == "submitted").most_common(12),
         questions=sorted(state.meta.get("unanswered", {}).items(), key=lambda kv: -kv[1])[:25],
         run=[{"title": j.title, "company": j.company, "location": j.location, "url": j.url, "score": j.score,
+              "have": cover[j.key][0], "asked": cover[j.key][1], "lack": cover[j.key][2],
               "status": o.status, "llm": llm} for j, o, _, llm in results],
         history=[dict(v, when=time.strftime("%d %b %Y", time.gmtime(v["ts"]))) for v in jobs[:300]])
     with open(os.path.join(out_dir, "dashboard.html"), "w") as f:
