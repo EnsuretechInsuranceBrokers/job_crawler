@@ -367,6 +367,9 @@ def test_list_answers_durations_and_address(profile, job):
     assert rule_answer("Home Address", profile) == "Austin, TX, United States"
     profile["address"] = "1 Main St, Austin"
     assert rule_answer("Address", profile) == "1 Main St, Austin"
+    assert rule_answer("Zip/Postal Code", profile) is None
+    profile["address"] = "1 Main St, Austin, TX 78701"
+    assert rule_answer("Zip/Postal Code", profile) == "78701" and rule_answer("PIN code", profile) == "78701"
 
 
 def test_workflow_files_are_valid():

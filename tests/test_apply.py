@@ -116,3 +116,20 @@ def test_cover_letter_is_uploaded(browser, profile, job, pdf, tmp_path):
     assert not by_llm and open(letter, "rb").read(5) == b"%PDF-"
     outcome, data = run(browser, "greenhouse_like.html", profile, job, pdf, FakeLLM("Because."), cover=(letter, text))
     assert outcome.status == "submitted" and data["cover"] == 1 and data["resume"] == "Jane_Doe_Resume.pdf"
+
+
+def test_model_never_answers_sensitive_or_ungrounded(browser, profile, job, pdf):
+    from jobbot.apply import SENSITIVE
+    for q in ("Are you legally authorized to work in the US?", "Will you require visa sponsorship?", "What is your current salary?",
+              "Do you have a disability?", "Candidate AI Usage Attestation:", "Are you subject to a non-compete agreement?",
+              "Does the deemed export rule affect your employment?", "Have you ever been convicted of a crime?"):
+        assert SENSITIVE.search(q), q
+    for q in ("Why do you want to work here?", "Tell us about a project you are proud of", "How did you hear about us?"):
+        assert not SENSITIVE.search(q), q
+    # a required sensitive dropdown with no rule stays open even though the model would answer it
+    html = open(os.path.join(FIX, "lever_like.html")).read().replace("Favourite colour of the week?", "Do you have a criminal record?")
+    outcome, data = run(browser, None, profile, job, pdf, FakeLLM("Red"), html=html)
+    assert outcome.status == "needs_answers" and outcome.unanswered == ["Do you have a criminal record?"] and data is None
+    # an essay answer claiming a skill the profile lacks (and the posting wants) is thrown away
+    outcome, _ = run(browser, "greenhouse_like.html", profile, job, pdf, FakeLLM("I have used Elixir and Rust daily for 9 years."))
+    assert outcome.status == "needs_answers" and outcome.unanswered == ["Why do you want to work here?"]

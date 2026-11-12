@@ -10,6 +10,7 @@ import re
 import time
 
 from .models import Outcome
+from .tailor import grounded
 from .util import detail, norm
 
 CONFIRM = re.compile(r"thank you|thanks for applying|application (has been|was) (received|submitted)|"
@@ -198,6 +199,7 @@ BUILTIN = [  # (regex on short label, profile -> answer); first match wins
     (r"^degree", _degree),
     (r"^discipline|^major|field of study|area of study|specialization", _field),
 
+    (r"zip|postal code|post code|pin ?code", lambda p: (re.findall(r"\b\d{5,6}\b", str(p.get("address", ""))) or [None])[-1]),
     (r"^(home |current |mailing |postal |permanent |residential )?address", lambda p: p.get("address") or p.get("location")),
     (r"^country|country of residence|country.{0,40}(live|reside|based|located)|which country", lambda p: p.get("country") or (p.get("location") or "").split(",")[-1].strip()),
     (r"^(current |your |present )?(job |work )?(location|city)|where are you (currently )?(based|located|living)|city.*(live|reside)",
@@ -356,6 +358,17 @@ Return JSON mapping each question id to an answer string, or null when the facts
 (never guess about legal status, visas, salary, demographics, dates, or anything not stated).
 For questions with options the answer must be exactly one of the option texts.
 For open questions about motivation or fit, write 2-4 honest sentences grounded in the candidate's real experience and the job posting; invent nothing."""
+
+
+# Questions with legal or personal weight. The model never answers these: only an explicit
+# entry in the user's `answers` may, so nothing of consequence is ever declared by guesswork.
+SENSITIVE = re.compile(
+    r"authori[sz]|eligib|sponsor|visa|work permit|citizen|nationality|immigration|export|clearance|"
+    r"criminal|convict|felony|arrest|background check|drug|"
+    r"disab|veteran|gender|\bsex\b|race|ethnic|religio|marital|pregnan|\bage\b|date of birth|"
+    r"salary|compensation|\bctc\b|\bpay\b|"
+    r"relative|related to|non-?compete|agreement|restrict|conflict of interest|government|"
+    r"attest|certif|declar|acknowledg|consent|\bai\b|artificial intelligence", re.I)
 
 
 def _memo_key(q):
@@ -542,10 +555,14 @@ class FormFiller:
 
         open_fields = still_open()
         if open_fields and self.cfg.get("llm_answer_questions", True):
-            askable = {f["jb"]: f for f in open_fields if f["kind"] != "file" and f["label"]}
+            askable = {f["jb"]: f for f in open_fields
+                       if f["kind"] != "file" and f["label"] and not SENSITIVE.search(f["label"])}
             for jb, a in llm_answers(self.llm, list(askable.values()), self.profile, self.job,
                                      self.cfg.get("memory")).items():
                 f = askable.get(jb)
+                if f and not f.get("options") and not grounded(a, self.profile, self.job, max_len=1500, letter=True):
+                    detail(f"model answer rejected (not grounded in the profile): '{f['label'][:50]}'")
+                    continue
                 try:
                     if f and self.put(f, a):
                         answered.add(jb)

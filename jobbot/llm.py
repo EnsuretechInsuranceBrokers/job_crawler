@@ -155,7 +155,7 @@ def _gemini_call(self, system, user, as_json):
         if n == len(order):
             time.sleep(20)  # every model was busy or rate-limited: give the per-minute limit a moment
         try:
-            r = requests.post(f"{self.base}/models/{model}:generateContent", json=body, timeout=45,
+            r = requests.post(f"{self.base}/models/{model}:generateContent", json=body, timeout=30,
                               headers={"x-goog-api-key": str(self.key), "Content-Type": "application/json"})
             if r.status_code in (401, 403):
                 break  # a key problem: no other model will help
