@@ -40,6 +40,9 @@ class LLM:
         self.enabled = bool(cfg.get("enabled", True) and self.base and self.key)
         self.failures = 0
         self.json_mode = True
+        self.calls = self.answered = 0
+        self.min_interval = float(cfg.get("min_seconds_between_calls", 4))  # stay under free per-minute limits
+        self._last = 0.0
         self.native_gemini = "generativelanguage.googleapis.com" in self.base and not self.base.endswith("/openai")
         if self.native_gemini and not self.model:
             self.model = default or "gemini-flash-latest"
@@ -64,6 +67,11 @@ class LLM:
         """Returns text (or parsed JSON), or None when the model is unavailable."""
         if not self.enabled:
             return None
+        wait = self._last + self.min_interval - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        self._last = time.time()
+        self.calls += 1
         if not self.model:
             self.model = self._pick_model()
             detail(f"LLM model: {self.model}")
@@ -97,6 +105,7 @@ class LLM:
             text = r.json()["choices"][0]["message"]["content"].strip()
             parsed = json.loads(_json_part(text)) if as_json else text
             self.failures = 0
+            self.answered += 1
             return parsed
         except Exception as e:  # noqa: BLE001
             self.failures += 1
@@ -129,6 +138,7 @@ def _gemini_call(self, system, user, as_json):
     text = "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"]).strip()
     parsed = json.loads(_json_part(text)) if as_json else text
     self.failures = 0
+    self.answered += 1
     return parsed
 
 

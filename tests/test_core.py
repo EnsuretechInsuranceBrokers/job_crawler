@@ -322,10 +322,12 @@ def test_llm_picks_model_and_degrades_gracefully(monkeypatch):
         return Resp(200, {"choices": [{"message": {"content": 'Sure: {"ok": true}'}}]})
 
     monkeypatch.setattr(llm_mod.requests, "post", post)
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda s: None)
     gem = llm_mod.LLM({"enabled": True}, {"llm": {"provider": "gemini", "api_key": "k"}})
     assert gem.ask("s", "u", as_json=True) == {"ok": True}
     url, body, headers = calls[-1]
     assert url.endswith("/v1beta/models/gemini-flash-latest:generateContent") and headers["x-goog-api-key"] == "k"
+    assert (gem.calls, gem.answered) == (1, 1)
     assert body["generationConfig"]["responseMimeType"] == "application/json" and "Authorization" not in headers
     calls.clear()
     bot = llm_mod.LLM({"enabled": True}, {"llm": {"provider": "groq", "api_key": "k"}})
@@ -477,3 +479,13 @@ def test_answer_memory_and_dashboard(tmp_path, profile, job):
     assert "Initech" in html and "Shoe size?" in html and "submitted, all time" in html and "<script" not in html
     text = report.build(results, False, str(tmp_path), state.meta["unanswered"])
     assert "seen 3 times" in text
+
+
+def test_number_boxes_never_guess_units():
+    from jobbot.apply import numeric_answer
+    assert numeric_answer("2", "Years of experience") == "2"
+    assert numeric_answer("12 LPA", "Expected CTC (in LPA)") == "12"
+    assert numeric_answer("12 LPA", "Expected annual salary in INR") is None
+    assert numeric_answer("2 weeks", "Notice period in weeks") == "2"
+    assert numeric_answer("2 weeks", "Notice period (in days)") is None
+    assert numeric_answer("Open to discussing", "Expected salary") is None

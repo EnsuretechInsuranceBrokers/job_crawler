@@ -53,7 +53,9 @@ def select(jobs, profile, cfg, seen):
         job.score = score_job(job, profile, cfg["match"].get("max_age_days", 0))
         if job.score >= cfg["match"]["min_score"]:
             out.append(job)
-    out.sort(key=lambda j: (-j.score, -j.posted))
+    # Best match first; among equals prefer jobs the bot can submit itself, then the newest.
+    from .apply import apply_url
+    out.sort(key=lambda j: (-j.score, apply_url(j) is None, -j.posted))
     unique = []
     for job in out:
         if role_key(job) not in roles:

@@ -58,6 +58,7 @@ def run(args):
         chosen.append((job, auto))
 
     results = []
+    started, budget = time.time(), 60 * float(acfg.get("max_minutes", 70))
     file_name = re.sub(r"\W+", "_", profile["name"]).strip("_") + "_Resume.pdf"
     letter_name = file_name.replace("_Resume.pdf", "_Cover_Letter.pdf")
     with sync_playwright() as pw:
@@ -66,6 +67,10 @@ def run(args):
                                      proxy={"server": proxy} if proxy else None)
         context = browser.new_context(locale="en-US", viewport={"width": 1280, "height": 1600})
         for n, (job, auto) in enumerate(chosen, 1):
+            if time.time() - started > budget:
+                # Leave time to save state and upload the report; the rest is picked up next run.
+                log(f"time budget reached after {n - 1} of {len(chosen)} jobs; remaining jobs wait for the next run")
+                break
             detail(f"[{n}/{len(chosen)}] {job.title} @ {job.company} ({job.source}, score {job.score})")
             pdf, letter_pdf, used_llm = None, None, False
             try:
@@ -106,7 +111,8 @@ def run(args):
     text = report.build(results, dry, out_dir, asked)
     report.dashboard(state, results, dry, out_dir)
     log("results: " + (", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "nothing to do"))
-    log(f"resumes tailored by LLM: {sum(1 for r in results if r[3])}/{len(results)}")
+    log(f"resumes tailored by LLM: {sum(1 for r in results if r[3])}/{len(results)}; "
+        f"model calls answered: {llm.answered}/{llm.calls}; took {int((time.time() - started) / 60)} min")
     if util.VERBOSE:
         print(text, file=sys.stderr)
 

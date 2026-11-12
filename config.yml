@@ -51,10 +51,12 @@ apply:
   reapply_after_days: 7  # a still-open job may be applied to again after this many days; 0 = never twice
   accept_consent: true   # tick required privacy/consent checkboxes
   delay_seconds: 20      # pause between applications
+  max_minutes: 70        # stop starting new applications after this long, so the run always finishes cleanly
 
 llm:
   # Optional AI for tailoring, cover letters and open questions. The provider and
   # its free API key go in your profile (see profile.example.yml); without one the
   # bot uses keyword tailoring and a template cover letter.
   enabled: true
+  min_seconds_between_calls: 4   # pacing for free-tier per-minute limits
   answer_questions: true # let the model answer unknown required questions, strictly from your profile

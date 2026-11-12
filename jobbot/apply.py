@@ -336,6 +336,21 @@ def pick_option(answer, options):
     return scores.index(best) if best and scores.count(best) == 1 else None
 
 
+def numeric_answer(answer, label):
+    """What to type into a number-only box. A bare number goes in as is; "2 weeks" or "12 LPA"
+    only when the question names the same unit, so the number cannot be misread."""
+    a = answer.strip()
+    if re.fullmatch(r"\d+(\.\d+)?", a):
+        return a
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([a-zA-Z]+)", a)
+    if not m:
+        return None
+    unit = m.group(2).lower().rstrip("s")
+    aliases = {"lpa": r"lpa|lakh|lac", "lakh": r"lpa|lakh|lac", "year": r"year|yrs?\b", "month": r"month",
+               "week": r"week", "day": r"day"}
+    return m.group(1) if re.search(aliases.get(unit, re.escape(unit)), label, re.I) else None
+
+
 LLM_SYSTEM = """You fill in a job application for the candidate below. Answer each question ONLY from the candidate's facts.
 Return JSON mapping each question id to an answer string, or null when the facts do not determine the answer
 (never guess about legal status, visas, salary, demographics, dates, or anything not stated).
@@ -444,6 +459,10 @@ class FormFiller:
         if kind in ("text", "textarea"):
             if norm(answer) in ("decline", "consent"):
                 return False
+            if f.get("info", "").startswith("input[number]"):
+                answer = numeric_answer(answer, f["label"])
+                if answer is None:
+                    return False  # e.g. "12 LPA" for a box that may want rupees: do not guess the unit
             self.loc(f["jb"]).fill(answer, timeout=5000)
             return True
         if kind == "combobox":
