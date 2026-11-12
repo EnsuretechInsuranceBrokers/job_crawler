@@ -49,6 +49,7 @@ apply:
   max_manual_per_run: 10 # tailored "apply yourself" packets per run
   max_per_company: 2     # per run, so one employer is not flooded
   reapply_after_days: 7  # a still-open job may be applied to again after this many days; 0 = never twice
+  skip_if_ineligible: true  # do not submit when a required "are you located in ...?" must truthfully be answered no
   accept_consent: true   # tick required privacy/consent checkboxes
   delay_seconds: 20      # pause between applications
   public_badge: true     # publish a counts-only badge ("3 this week · 12 total") next to the encrypted state

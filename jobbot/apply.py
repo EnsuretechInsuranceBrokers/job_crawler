@@ -371,6 +371,11 @@ SENSITIVE = re.compile(
     r"attest|certif|declar|acknowledg|consent|\bai\b|artificial intelligence", re.I)
 
 
+# "Are you located in the US or Canada?" answered "No" means the employer will not consider
+# the application; submitting it only adds noise for both sides.
+MUST_BE_THERE = re.compile(r"(are|will) you (be )?(currently |physically )?(located|based|resid\w+|living)\b|do you (currently )?(live|reside)\b", re.I)
+
+
 def _memo_key(q):
     return norm(q["label"]) + "|" + "|".join(norm(o["text"]) for o in q.get("options") or [])
 
@@ -403,6 +408,7 @@ class FormFiller:
         self.cover_pdf, self.cover_text = cover or (None, None)
         self.cfg, self.llm = cfg, llm
         self.done, self.filled, self.llm_used = set(), 0, []
+        self.ineligible = None  # the question whose truthful answer rules the candidate out
 
     def loc(self, jb):
         return self.page.locator(f'[data-jb="{jb}"]')
@@ -470,6 +476,12 @@ class FormFiller:
 
     def put(self, f, answer):
         """Enter one answer. Returns True when the field was actually filled."""
+        ok = self._put(f, answer)
+        if ok and f["required"] and MUST_BE_THERE.search(f["label"]) and re.match(r"no\b", norm(answer)):
+            self.ineligible = f["label"]
+        return ok
+
+    def _put(self, f, answer):
         kind = f["kind"]
         if kind in ("text", "textarea"):
             if norm(answer) in ("decline", "consent"):
@@ -616,6 +628,8 @@ def apply_to(context, job, profile, resume_pdf, cfg, llm=None, dry_run=True, url
         detail(f"{job.company}: filled {filler.filled} fields, {len(unanswered)} required unanswered")
         if filler.filled < 2:
             return Outcome("error", "application form not found (posting closed or layout changed)")
+        if filler.ineligible and cfg.get("skip_if_ineligible", True):
+            return Outcome("ineligible", filler.ineligible, llm_answers=filler.llm_used)
         if unanswered:
             return Outcome("needs_answers", "required questions the profile cannot answer", unanswered, filler.llm_used)
         if _captcha(page):

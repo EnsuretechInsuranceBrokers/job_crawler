@@ -35,6 +35,8 @@ def run(browser, fixture, profile, job, pdf, llm=None, dry=False, html=None, cov
     url = "file://" + os.path.join(FIX, fixture or "")
     if html is not None:
         ctx.route("**/custom.html", lambda r: r.fulfill(body=html, content_type="text/html; charset=utf-8"))
+        thanks = open(os.path.join(FIX, "thanks.html")).read()
+        ctx.route("**/thanks.html", lambda r: r.fulfill(body=thanks, content_type="text/html; charset=utf-8"))
         url = "http://jobbot.test/custom.html"
     pages = []
     orig = ctx.new_page
@@ -133,3 +135,15 @@ def test_model_never_answers_sensitive_or_ungrounded(browser, profile, job, pdf)
     # an essay answer claiming a skill the profile lacks (and the posting wants) is thrown away
     outcome, _ = run(browser, "greenhouse_like.html", profile, job, pdf, FakeLLM("I have used Elixir and Rust daily for 9 years."))
     assert outcome.status == "needs_answers" and outcome.unanswered == ["Why do you want to work here?"]
+
+
+def test_ineligible_application_is_not_submitted(browser, profile, job, pdf):
+    html = open(os.path.join(FIX, "lever_like.html")).read().replace(
+        "Favourite colour of the week?", "Are you currently located in Canada?").replace(">Red<", ">Yes<").replace(">Blue<", ">No<").replace(
+        'value="Red"', 'value="Yes"').replace('value="Blue"', 'value="No"')
+    profile["answers"]["located in canada"] = "No"
+    outcome, data = run(browser, None, profile, job, pdf, html=html)
+    assert outcome.status == "ineligible" and "Canada" in outcome.detail and data is None
+    profile["answers"]["located in canada"] = "Yes"
+    outcome, data = run(browser, None, profile, job, pdf, html=html)
+    assert outcome.status == "submitted" and data["cards[a][field1]"] == "Yes"

@@ -167,7 +167,8 @@ def daily_log(profile, results, dry_run, llm_count, state=None):
     """End-of-run digest. results: list of (job, outcome, pdf, used_llm)."""
     sent = [r for r in results if r[1].status == "submitted"]
     ready = [r for r in results if r[1].status == "dry_run_ok"]
-    todo = [r for r in results if r[1].status not in ("submitted", "dry_run_ok")]
+    skipped = [r for r in results if r[1].status == "ineligible"]
+    todo = [r for r in results if r[1].status not in ("submitted", "dry_run_ok", "ineligible")]
     why = {"needs_answers": "unanswered question", "captcha": "captcha", "verification": "email code",
            "unconfirmed": "check inbox", "manual": "apply on site", "error": "error"}
     lines = [f"jobbot daily log{' (DRY RUN - nothing sent)' if dry_run else ''}",
@@ -183,12 +184,15 @@ def daily_log(profile, results, dry_run, llm_count, state=None):
     questions = sorted({q for _, o, *_ in results for q in o.unanswered})
     if questions:
         lines += ["", "Add answers for:"] + [f"- {q[:90]}" for q in questions[:8]]
+    if skipped:
+        lines += ["", f"Skipped (form requires a location you are not in): {len(skipped)}"]
     lines += ["", f"Resumes tailored by AI: {llm_count}/{len(results)}"]
     counts = {}
     for _, o, *_ in todo:
         counts[why.get(o.status, o.status)] = counts.get(why.get(o.status, o.status), 0) + 1
     public = (f"**Daily log{' (dry run - nothing sent)' if dry_run else ''}:** submitted {len(sent)}, need you {len(todo)}"
               + (f" ({', '.join(f'{v} {k}' for k, v in sorted(counts.items()))})" if counts else "")
-              + (f", ready when live {len(ready)}" if ready else "") + "."
+              + (f", ready when live {len(ready)}" if ready else "")
+              + (f", skipped as not eligible {len(skipped)}" if skipped else "") + "."
               + (f" Submitted in the last 7 days: {_week_total(state)}." if state is not None and not dry_run else ""))
     return send(profile, "\n".join(lines), state=state, public_text=public)

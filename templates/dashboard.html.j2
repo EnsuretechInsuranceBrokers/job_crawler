@@ -31,7 +31,7 @@
 <div class="tiles">
   <div class="tile"><b>{{ totals.get("submitted", 0) }}</b><span>submitted, all time</span></div>
   <div class="tile"><b>{{ week.get("submitted", 0) }}</b><span>submitted, last 7 days</span></div>
-  <div class="tile"><b>{{ totals.values() | sum - totals.get("submitted", 0) }}</b><span>handed to you, all time</span></div>
+  <div class="tile"><b>{{ totals.values() | sum - totals.get("submitted", 0) - totals.get("ineligible", 0) }}</b><span>handed to you, all time</span></div>
   <div class="tile"><b>{{ run | selectattr("status", "in", ["submitted", "dry_run_ok"]) | list | length }} / {{ run | length }}</b><span>forms completed this run</span></div>
 </div>
 

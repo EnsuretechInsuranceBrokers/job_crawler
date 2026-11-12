@@ -87,8 +87,7 @@ Then:
 2. Download the `jobbot-report` artifact from the run and open it with your
    `state_key` as the zip password (use 7-Zip / Keka / `7z x`; the zip is
    AES-encrypted). Check the tailored PDFs and the "Teach the bot" list.
-3. When it looks right, set `apply.dry_run: false` in `config.yml`. From then on
-   it runs every weekday by itself.
+3. When it looks right, go live (next section). It runs every day by itself.
 
 That is the only required manual input. Optional: phone alerts (below) and your
 own company lists in `config.yml`.
@@ -127,6 +126,46 @@ session on GitHub's runner, which is gone by the time you read the message. The
 alert is your cue to open the link and finish that one application yourself,
 with the tailored PDFs already on your phone (Telegram or email).
 
+## Going live
+
+The bot ships in dry-run mode: it fills real forms and stops before the submit
+button. To let it submit:
+
+1. Read one dry-run report first. `dashboard.html` shows what it would have sent
+   and to whom; open two or three of the tailored PDFs.
+2. Set `apply.dry_run: false` in `config.yml` and commit.
+3. For the first live days consider `max_per_run: 5`, then raise it. The default
+   of 29 a day is about 203 applications a week.
+
+Things worth knowing before you do:
+
+- **Nothing is sent twice in a week.** A job is recorded before its form is
+  submitted, and becomes eligible again only after `reapply_after_days` (7).
+  Recruiters do see repeat applications; set it to 0 to apply once only.
+- **The AI never answers questions with legal or personal weight** – work
+  authorisation, visas, citizenship, pay, criminal record, demographics,
+  agreements, attestations. Those come only from your own `answers`, and a form
+  that asks one you have not answered waits for you.
+- **Forms that ask whether AI was used** are left for you. If you use the AI
+  option, the honest answer is yes.
+- **A form that rules you out is not submitted.** If a required "are you located
+  in ...?" must truthfully be answered no, the bot skips that job and says so.
+- **To pause**, disable the *jobbot* workflow in the Actions tab, or set
+  `dry_run: true` again. Closing the "jobbot inbox" issue stops the emails.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Run says "Neither the JOBBOT_KEY nor the PROFILE_YAML secret is set" | Add the `JOBBOT_KEY` secret (or variable) under Settings → Secrets and variables → Actions. |
+| "JOBBOT_KEY does not open profile.enc" | The profile was sealed with a different key. Re-seal it with the key stored in the secret. |
+| "Cannot decrypt saved state" | `state_key` in the profile changed. Restore it, or delete the `bot-state` branch to start with an empty memory. |
+| No emails | Watch the repository, or make sure GitHub emails you for @mentions; the comments are on the "jobbot inbox" issue either way. |
+| "LLM disabled for this run" in the log | The AI key is wrong or the free quota is used up. The run continues with keyword tailoring; essay questions wait for you. |
+| "source skipped - .../name: HTTPError 404" | That company no longer has a board under that name. Remove it from `config.yml` (harmless if left). |
+| Few or no matches | Loosen `search.titles` / `exclude_titles`, raise `max_required_years` or `match.max_age_days`, add companies to `config.yml`. |
+| The schedule stopped | GitHub pauses schedules in inactive repositories; the workflow re-enables itself on each run, and a manual run restarts it. |
+
 ## What is in the report
 
 Each run uploads `jobbot-report` (an AES-encrypted zip; the password is your
@@ -148,6 +187,7 @@ No bot can honestly promise 100% unattended applications:
 |---|---|
 | Form shows a CAPTCHA or asks for an emailed verification code | Stops, puts the job in "Needs you". It never tries to defeat these. |
 | Required question it cannot answer from your profile | Stops and lists the question under "Teach the bot". Add one regex to `answers:` and that question is automated from then on. |
+| The form itself rules you out ("are you located in the US?") | Skips the job without submitting and lists it as skipped. |
 | Aggregator job that links to some other website | Tailors the resume and gives you the link. |
 | LinkedIn, Naukri, Glassdoor, Indeed and other login-walled sites | Not automated, on purpose – see below. |
 
@@ -169,7 +209,9 @@ Expect the manual share to shrink over the first week as your `answers:` grow.
 - The bot's memory (`bot-state` branch) and the report artifact are encrypted
   with your `state_key`.
 - Workflow logs contain counts only – no names, companies or questions.
-- The workflow has no pull-request trigger, so forks cannot reach the secret.
+- Pull requests from forks never receive the secrets. Pull requests from
+  branches of this repository run a preview that is forced into dry-run mode.
+- If you add an AI key, your resume text is sent to that provider.
 
 ## Cost
 

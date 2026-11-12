@@ -6,7 +6,7 @@ from email.message import EmailMessage
 
 import pyzipper
 
-LABELS = {"needs_answers": "form has questions your profile cannot answer", "captcha": "CAPTCHA",
+LABELS = {"ineligible": "skipped: the form requires you to be somewhere you are not", "needs_answers": "form has questions your profile cannot answer", "captcha": "CAPTCHA",
           "verification": "email verification code required", "unconfirmed": "submitted, but no confirmation seen",
           "manual": "site does not support auto-apply", "error": "error"}
 
@@ -16,7 +16,8 @@ def build(results, dry_run, out_dir, asked=None):
     asked = asked or {}
     sent = [r for r in results if r[1].status == "submitted"]
     ready = [r for r in results if r[1].status == "dry_run_ok"]
-    todo = [r for r in results if r[1].status not in ("submitted", "dry_run_ok")]
+    skipped = [r for r in results if r[1].status == "ineligible"]
+    todo = [r for r in results if r[1].status not in ("submitted", "dry_run_ok", "ineligible")]
     lines = [f"# jobbot report - {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}", "",
              "**Mode: DRY RUN - nothing was submitted.** Set `apply.dry_run: false` in config.yml to go live."
              if dry_run else "**Mode: LIVE**", ""]
@@ -36,6 +37,10 @@ def build(results, dry_run, out_dir, asked=None):
             lines.append(f"  - why: {LABELS.get(outcome.status, outcome.status)}" + (f" ({outcome.detail})" if outcome.status == "error" else ""))
             lines += [f"  - unanswered: {q}" for q in outcome.unanswered]
         lines.append("")
+    if skipped:
+        lines += [f"## Skipped - not eligible ({len(skipped)})", "",
+                  "The form asked whether you are located somewhere and your truthful answer is no, so nothing was sent.", ""]
+        lines += [f"- **{j.title}** - {j.company}: _{o.detail}_" for j, o, _, _ in skipped] + [""]
     questions = sorted({q for _, o, _, _ in results for q in o.unanswered}, key=lambda q: (-asked.get(q, 1), q))
     if questions:
         lines += ["## Teach the bot", "", "Add a pattern for each of these to `answers:` in your profile and similar "

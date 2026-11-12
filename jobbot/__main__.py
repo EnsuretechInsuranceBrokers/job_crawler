@@ -105,7 +105,7 @@ def run(args):
     for _, o, _, _ in results:
         counts[o.status] = counts.get(o.status, 0) + 1
     summary = {"submitted": counts.get("submitted", 0),
-               "todo": sum(v for k, v in counts.items() if k not in ("submitted", "dry_run_ok"))}
+               "todo": sum(v for k, v in counts.items() if k not in ("submitted", "dry_run_ok", "ineligible"))}
     asked = state.meta.setdefault("unanswered", {})         # how often each open question has come up
     for _, o, _, _ in results:
         for q in o.unanswered:
