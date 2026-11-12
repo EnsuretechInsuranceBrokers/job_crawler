@@ -115,31 +115,69 @@ class LLM:
             detail(f"LLM call failed: {type(e).__name__} status={status} body={(r.text[:200] if r is not None else '')!r}")
             if self.failures >= 3 or status in (401, 403, 404):
                 self.enabled = False  # bad key or quota gone: stop trying this run
-                log(f"LLM disabled for this run (status {status}); using keyword tailoring")
+                log(f"LLM disabled for this run ({type(e).__name__} {status}); using keyword tailoring")
             return None
 
 
+GEMINI_ALIASES = ["gemini-flash-latest", "gemini-flash-lite-latest"]  # Google keeps these pointing at current models
+
+
+def _gemini_models(self):
+    """Aliases first, then whatever text 'flash' models the key can use, newest first."""
+    models = [self.model] if self.model and self.model not in GEMINI_ALIASES else []
+    models += GEMINI_ALIASES
+    try:
+        r = requests.get(f"{self.base}/models?pageSize=200", headers={"x-goog-api-key": str(self.key)}, timeout=30)
+        names = [m["name"].split("/")[-1] for m in r.json().get("models", [])
+                 if "generateContent" in m.get("supportedGenerationMethods", [])]
+        plain = [n for n in names if re.fullmatch(r"gemini-[\d.]+-flash(-lite)?", n)]
+        models += sorted(plain, key=lambda n: (_version(n), "lite" not in n), reverse=True)
+    except Exception as e:  # noqa: BLE001
+        detail(f"gemini model listing failed: {type(e).__name__}")
+    return list(dict.fromkeys(models))
+
+
 def _gemini_call(self, system, user, as_json):
-    """Google's generateContent API, as in their quickstart (key in the x-goog-api-key header)."""
+    """Google's generateContent API, as in their quickstart (key in the x-goog-api-key header).
+
+    Popular models are often overloaded on the free tier, so on "unavailable", "gone" or a
+    timeout the client moves to the next model and stays with the one that answers.
+    """
     body = {"systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
             "generationConfig": {"temperature": 0.2, **({"responseMimeType": "application/json"} if as_json else {})}}
-    for attempt in (1, 2, 3):
-        r = requests.post(f"{self.base}/models/{self.model}:generateContent", json=body, timeout=90,
-                          headers={"x-goog-api-key": str(self.key), "Content-Type": "application/json"})
-        if r.status_code in (429, 503) and attempt < 3:
-            time.sleep(25)  # free tier is limited per minute
-            continue
-        break
-    if r.status_code >= 400:
-        err = requests.HTTPError(f"gemini {r.status_code}")
-        err.response = r
-        raise err
-    text = "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"]).strip()
-    parsed = json.loads(_json_part(text)) if as_json else text
-    self.failures = 0
-    self.answered += 1
-    return parsed
+    if not getattr(self, "_models", None):
+        self._models = _gemini_models(self)
+    last = None
+    for model in list(self._models):
+        r = None
+        try:
+            for attempt in (1, 2):
+                r = requests.post(f"{self.base}/models/{model}:generateContent", json=body, timeout=45,
+                                  headers={"x-goog-api-key": str(self.key), "Content-Type": "application/json"})
+                if r.status_code == 429 and attempt == 1:
+                    time.sleep(20)  # per-minute limit: one pause, then try again
+                    continue
+                break
+            if r.status_code in (401, 403):
+                break  # a key problem: no other model will help
+            if r.status_code >= 400:
+                raise requests.HTTPError(f"gemini {r.status_code}")
+            text = "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"]).strip()
+            parsed = json.loads(_json_part(text)) if as_json else text
+            if self.model != model:
+                detail(f"gemini model in use: {model}")
+            self.model = model
+            self._models = [model] + [m for m in self._models if m != model]  # stay with what works
+            self.failures = 0
+            self.answered += 1
+            return parsed
+        except Exception as e:  # noqa: BLE001
+            last = e
+            detail(f"gemini {model}: {type(e).__name__} {getattr(r, 'status_code', '')}")
+    err = requests.HTTPError("no gemini model answered")
+    err.response = r if r is not None else getattr(last, "response", None)
+    raise err
 
 
 LLM._gemini = _gemini_call

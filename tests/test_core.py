@@ -327,6 +327,21 @@ def test_llm_picks_model_and_degrades_gracefully(monkeypatch):
     assert gem.ask("s", "u", as_json=True) == {"ok": True}
     url, body, headers = calls[-1]
     assert url.endswith("/v1beta/models/gemini-flash-latest:generateContent") and headers["x-goog-api-key"] == "k"
+    # an overloaded or retired model: fall through to the next one and stay there
+    tried = []
+
+    def flaky(url, json, timeout, headers, allow_redirects=None):
+        model = url.split("/models/")[1].split(":")[0]
+        tried.append(model)
+        if model == "gemini-flash-latest":
+            return Resp(503, {})
+        return Resp(200, {"candidates": [{"content": {"parts": [{"text": "hello"}]}}]})
+
+    monkeypatch.setattr(llm_mod.requests, "post", flaky)
+    gem2 = llm_mod.LLM({"enabled": True}, {"llm": {"provider": "gemini", "api_key": "k"}})
+    assert gem2.ask("s", "u") == "hello" and gem2.ask("s", "u") == "hello"
+    assert tried == ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-flash-lite-latest"]
+    monkeypatch.setattr(llm_mod.requests, "post", post)
     assert (gem.calls, gem.answered) == (1, 1)
     assert body["generationConfig"]["responseMimeType"] == "application/json" and "Authorization" not in headers
     calls.clear()
