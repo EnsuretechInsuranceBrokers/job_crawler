@@ -34,7 +34,10 @@ def build(results, dry_run, out_dir, asked=None):
         lines += [f"## Needs you ({len(todo)})", "", "Open the link, upload the tailored PDF, submit.", ""]
         for job, outcome, pdf, llm in todo:
             lines.append(row(job, outcome, pdf, llm))
-            lines.append(f"  - why: {LABELS.get(outcome.status, outcome.status)}" + (f" ({outcome.detail})" if outcome.status == "error" else ""))
+            lines.append(f"  - why: {LABELS.get(outcome.status, outcome.status)}"
+                         + (f" ({outcome.detail})" if outcome.status in ("error", "unconfirmed") else ""))
+            if pdf and os.path.exists(os.path.join(os.path.dirname(pdf), "form.png")):
+                lines.append(f"  - screenshot of the form as the bot left it: `{os.path.dirname(os.path.relpath(pdf, out_dir))}/form.png`")
             lines += [f"  - unanswered: {q}" for q in outcome.unanswered]
         lines.append("")
     if skipped:

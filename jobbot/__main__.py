@@ -87,10 +87,17 @@ def run(args):
                     state.record(job, "attempting")
                     state.save()
                 letter_pdf = render_letter_pdf(browser, tailored, letter, os.path.join(job_dir, letter_name))
-                outcome = apply_to(context, job, profile, pdf, acfg, llm, dry, cover=(letter_pdf, letter)) if auto else \
+                shot = os.path.join(job_dir, "form.png")
+                outcome = apply_to(context, job, profile, pdf, acfg, llm, dry, cover=(letter_pdf, letter), shot=shot) if auto else \
                     Outcome("manual", "site is not auto-appliable")
             except Exception as e:  # noqa: BLE001
                 outcome = Outcome("error", type(e).__name__)
+            if outcome.status in ("submitted", "dry_run_ok", "ineligible") and pdf:
+                # keep screenshots only where they help: forms that stopped or misbehaved
+                try:
+                    os.remove(os.path.join(os.path.dirname(pdf), "form.png"))
+                except OSError:
+                    pass
             detail(f"   -> {outcome.status}: {outcome.detail}" + "".join(f"\n      ? {q}" for q in outcome.unanswered))
             results.append((job, outcome, pdf, used_llm))
             if not dry:

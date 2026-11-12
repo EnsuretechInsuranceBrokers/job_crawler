@@ -147,3 +147,25 @@ def test_ineligible_application_is_not_submitted(browser, profile, job, pdf):
     profile["answers"]["located in canada"] = "Yes"
     outcome, data = run(browser, None, profile, job, pdf, html=html)
     assert outcome.status == "submitted" and data["cards[a][field1]"] == "Yes"
+
+
+def test_rejected_submit_reports_why_and_keeps_screenshot(browser, profile, job, pdf, tmp_path):
+    # a form that silently refuses the submission and shows a validation message
+    html = open(os.path.join(FIX, "lever_like.html")).read().replace(
+        "if (!data['cards[a][field0]'] || !data['cards[a][field1]']) return;",
+        "document.body.insertAdjacentHTML('beforeend', '<p class=\"error-message\">Location is required</p>'); return;")
+    profile["answers"]["favourite colour"] = "Red"
+    from jobbot import apply as apply_mod
+    real_sleepless = apply_mod.time.time
+    shot = str(tmp_path / "form.png")
+    ctx = browser.new_context()
+    ctx.route("**/custom.html", lambda r: r.fulfill(body=html, content_type="text/html; charset=utf-8"))
+    t0 = [real_sleepless()]
+    apply_mod.time.time = lambda: (t0.__setitem__(0, t0[0] + 12) or t0[0])   # make the 30 s confirmation wait pass quickly
+    try:
+        outcome = apply_to(ctx, job, profile, pdf, CFG, None, False, url="http://jobbot.test/custom.html", shot=shot)
+    finally:
+        apply_mod.time.time = real_sleepless
+        ctx.close()
+    assert outcome.status == "unconfirmed" and "Location is required" in outcome.detail
+    assert open(shot, "rb").read(4) == b"\x89PNG"

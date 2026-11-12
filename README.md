@@ -177,7 +177,9 @@ Each run uploads `jobbot-report` (an AES-encrypted zip; the password is your
   profile never mentions), the questions that stop forms most often, and the
   full history.
 - `report.md` – the same run as text, with a "Teach the bot" list.
-- one folder per job with the tailored resume and cover letter (PDF and text).
+- one folder per job with the tailored resume and cover letter (PDF and text),
+  and for any form that stopped or was not accepted, `form.png` – a screenshot
+  of the form exactly as the bot left it.
 
 ## What will still need you
 

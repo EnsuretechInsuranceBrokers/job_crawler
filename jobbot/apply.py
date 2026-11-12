@@ -610,8 +610,31 @@ def _text(page):
         return ""
 
 
-def apply_to(context, job, profile, resume_pdf, cfg, llm=None, dry_run=True, url=None, cover=None):
-    """Open the job's form, fill it, and submit unless dry_run. Returns an Outcome."""
+def _form_errors(page):
+    """Validation messages the form is showing (so an unconfirmed submit can say why)."""
+    try:
+        texts = page.locator('[role="alert"]:visible, [class*="error" i]:visible, [class*="invalid" i]:visible').all_inner_texts()
+    except Exception:  # noqa: BLE001
+        return []
+    seen = []
+    for t in texts:
+        t = re.sub(r"\s+", " ", t).strip()
+        if 3 < len(t) < 160 and t not in seen:
+            seen.append(t)
+    return seen[:4]
+
+
+def apply_to(context, job, profile, resume_pdf, cfg, llm=None, dry_run=True, url=None, cover=None, shot=None):
+    """Open the job's form, fill it, and submit unless dry_run. Returns an Outcome.
+
+    `shot` is a path for a screenshot of the page whenever the outcome is not a clean
+    success - it goes into the private report so a stuck form can be seen, not guessed at.
+    """
+    outcome = _apply(context, job, profile, resume_pdf, cfg, llm, dry_run, url, cover, shot)
+    return outcome
+
+
+def _apply(context, job, profile, resume_pdf, cfg, llm, dry_run, url, cover, shot):
     url = url or apply_url(job)
     if not url:
         return Outcome("manual", "site is not auto-appliable")
@@ -655,8 +678,17 @@ def apply_to(context, job, profile, resume_pdf, cfg, llm=None, dry_run=True, url
             moved = page.url != before_url and re.search(r"confirm|thank|success|submitted", page.url, re.I)
             if moved or (CONFIRM.search(body) and not had_confirm):
                 return Outcome("submitted", "confirmation page seen", llm_answers=filler.llm_used)
+        errors = _form_errors(page)
+        if errors:
+            return Outcome("unconfirmed", "the form did not accept the submission: " + " | ".join(errors),
+                           llm_answers=filler.llm_used)
         return Outcome("unconfirmed", "submitted but no confirmation seen - check your inbox", llm_answers=filler.llm_used)
     except Exception as e:  # noqa: BLE001 - message may echo typed values, so keep only the type
         return Outcome("error", type(e).__name__)
     finally:
+        if shot:
+            try:
+                page.screenshot(path=shot, full_page=True, timeout=10000)
+            except Exception:  # noqa: BLE001
+                pass
         page.close()
