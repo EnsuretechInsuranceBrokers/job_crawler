@@ -536,3 +536,20 @@ def test_insights_gap_years_and_badge(tmp_path, profile, job):
     report.badge(state, False, path)
     b = _json.load(open(path))
     assert b["message"] == "1 this week · 1 total" and "Initech" not in open(path).read() and b["schemaVersion"] == 1
+
+
+def test_region_restricted_remote_jobs(profile):
+    from jobbot.match import restricted_to
+    assert restricted_to("This is a remote role. Candidates must be based in the United States.") == "the United States"
+    assert restricted_to("Only open to candidates located in Canada") == "Canada"
+    assert restricted_to("We are hiring US-based candidates for this role").lower() == "us"
+    assert restricted_to("You are authorized to work in the U.S. without sponsorship").lower().startswith("the u.s")
+    assert restricted_to("Work with teams based in the US and Europe. Remote anywhere.") is None
+    assert restricted_to("Our customers live in Germany and beyond") is None
+    assert restricted_to("Join us based candidates welcome; help us only candidates who care") is None
+    profile["search"].update(locations=["india"], remote_ok=True, remote_regions=["india", "apac", "asia", "global"])
+    mk = lambda desc: Job("x", "1", "A", "Software Engineer", "Remote", "", "python " + desc, remote=True)  # noqa: E731
+    assert score_job(mk("Fully remote, work from anywhere."), profile) > 0
+    assert score_job(mk("Applicants must be located in the United States."), profile) == 0
+    del profile["search"]["remote_regions"]
+    assert score_job(mk("Applicants must be located in the United States."), profile) > 0   # no regions set: not filtered

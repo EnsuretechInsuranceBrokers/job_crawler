@@ -8,6 +8,27 @@ def _phrase_in(phrase, title_norm):
     return all(has_term(w, title_norm) for w in norm(phrase).split())
 
 
+PLACES = (r"(?:the )?(?:u\.?s\.?a?\.?|united states|america|canada|u\.?k\.?|united kingdom|europe|e\.?u\.?|emea|latam|latin america|"
+          r"north america|australia|germany|france|brazil|mexico|ireland|netherlands|poland|spain|portugal|israel|singapore|japan)")
+RESTRICTED = re.compile(
+    r"(?:must|need to|required to|have to|should)\s+(?:be\s+)?(?:currently\s+)?(?:based|located|resid\w+|live|living)\s+in\s+(" + PLACES + r")\b"
+    r"|(?:only|exclusively)\s+(?:open\s+to|for|hiring|considering)\s+(?:candidates|applicants|people|residents)\s+(?:based\s+|located\s+|residing\s+)?in\s+(" + PLACES + r")\b"
+    r"|\b(" + PLACES + r")[- ](?:based|only)\s+(?:candidates|applicants|role|position)"
+    r"|(?:candidates|applicants)\s+(?:must\s+be\s+)?(?:based|located|residing)\s+in\s+(" + PLACES + r")\s+only"
+    r"|(?:authori[sz]ed|eligible|right)\s+to\s+work\s+in\s+(" + PLACES + r")\s+without\s+(?:visa\s+)?sponsorship", re.I)
+
+
+def restricted_to(description):
+    """Place a posting says candidates must be in ('United States'), or None."""
+    for m in RESTRICTED.finditer(description or ""):
+        place = next((g for g in m.groups() if g), None)
+        # "us", "eu" and "uk" only count when written as abbreviations, not as the word "us"
+        if place and (len(place.replace(".", "").replace("the ", "").strip()) > 3 or place.replace("the ", "").strip().isupper()
+                      or "." in place):
+            return place
+    return None
+
+
 def score_job(job, profile, max_age_days=0):
     """0 = reject. Otherwise 0.5 for a title match plus up to 0.5 for skill overlap."""
     search = profile["search"]
@@ -28,6 +49,11 @@ def score_job(job, profile, max_age_days=0):
             regions = search.get("remote_regions") or []
             bare = not re.sub(r"\b(remote|anywhere|worldwide|global|fully|work from home|wfh|only)\b", "", loc).strip()
             ok = not regions or bare or any(norm(r) in loc for r in regions)
+            if ok and regions:
+                # The location line may say just "Remote" while the text says "must be based in the US".
+                place = restricted_to(job.description)
+                if place and not any(norm(r) in norm(place) or norm(place) in norm(r) for r in regions):
+                    ok = False
         if not ok:
             return 0.0
     limit = search.get("max_required_years")

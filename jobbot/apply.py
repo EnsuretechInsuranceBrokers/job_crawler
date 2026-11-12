@@ -443,7 +443,9 @@ class FormFiller:
                 return False
             # Autocomplete (city, school, ...): type, wait for suggestions, take the best one.
             # Try the full answer, then just its first part ("Austin, TX, United States" -> "Austin").
-            for typed in dict.fromkeys([answer[:60], answer.split(",")[0].strip()[:60]]):
+            # ... and without a leading article ("The Pennsylvania State University" is listed without "The").
+            short = answer.split(",")[0].strip()
+            for typed in dict.fromkeys([answer[:60], short[:60], re.sub(r"^the ", "", short, flags=re.I)[:60]]):
                 step = f"type {len(typed)} chars"
                 box.fill(typed, timeout=4000)
                 for _ in range(8):
