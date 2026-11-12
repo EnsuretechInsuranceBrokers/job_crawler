@@ -41,7 +41,12 @@ def run(args):
     # as soon as this changes - i.e. after you add the answer - instead of waiting a week.
     import hashlib
     import json
-    sig = hashlib.sha256(json.dumps([profile.get("answers"), llm.enabled], sort_keys=True, default=str).encode()).hexdigest()[:16]
+    def fingerprint():
+        # includes whether the AI is answering right now: a form that stopped while the AI was
+        # down is tried again on the first run where it is back
+        return hashlib.sha256(json.dumps([profile.get("answers"), llm.enabled], sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+    sig = fingerprint()
     picks = select(crawl(cfg["sources"]), profile, cfg, lambda job: state.seen(job, reapply, sig))
     log(f"new matching jobs: {len(picks)}")
     from .insights import skills_gap
@@ -109,7 +114,7 @@ def run(args):
             results.append((job, outcome, pdf, used_llm))
             completed += outcome.status in ("submitted", "dry_run_ok")
             if not dry:
-                state.record(job, outcome.status, sig)
+                state.record(job, outcome.status, fingerprint())
                 state.save()  # after every job, so a later crash loses nothing
                 notify.alert(profile, job, outcome, [x for x in (pdf, letter_pdf) if x], state)
                 if auto:
@@ -125,7 +130,9 @@ def run(args):
     for _, o, _, _ in results:
         for q in o.unanswered:
             asked[q] = asked.get(q, 0) + 1
-    text = report.build(results, dry, out_dir, asked)
+    if llm.gave_up:
+        log("AI stopped answering during this run: resumes fell back to keyword tailoring and open questions were left for manual input")
+    text = report.build(results, dry, out_dir, asked, ai_down=llm.gave_up)
     report.dashboard(state, results, dry, out_dir, gap)
     if acfg.get("public_badge", True) and not args.demo:
         report.badge(state, dry, os.path.join(ROOT, ".state", "badge.json"))
@@ -139,7 +146,8 @@ def run(args):
 
     if not args.demo:
         report.encrypt_zip(out_dir, profile["state_key"])
-        if notify.daily_log(profile, results, dry, sum(1 for r in results if r[3]), state, quota=(completed, target, attempts)):
+        if notify.daily_log(profile, results, dry, sum(1 for r in results if r[3]), state, quota=(completed, target, attempts),
+                            ai_down=llm.gave_up):
             log("daily log sent to phone")
         state.save()  # dry runs record no jobs, so this only keeps settings such as the Telegram chat
         if profile.get("smtp") and results:

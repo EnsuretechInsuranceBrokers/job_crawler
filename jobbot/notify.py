@@ -163,7 +163,7 @@ def alert(profile, job, outcome, files=(), state=None):
     return sent
 
 
-def daily_log(profile, results, dry_run, llm_count, state=None, quota=None):
+def daily_log(profile, results, dry_run, llm_count, state=None, quota=None, ai_down=False):
     """End-of-run digest. results: list of (job, outcome, pdf, used_llm)."""
     sent = [r for r in results if r[1].status == "submitted"]
     ready = [r for r in results if r[1].status == "dry_run_ok"]
@@ -186,6 +186,9 @@ def daily_log(profile, results, dry_run, llm_count, state=None, quota=None):
         lines += ["", "Add answers for:"] + [f"- {q[:90]}" for q in questions[:8]]
     if skipped:
         lines += ["", f"Skipped (form requires a location you are not in): {len(skipped)}"]
+    if ai_down:
+        lines += ["", "AI unavailable for part of this run: open-ended questions were left for your input "
+                      "and will be retried automatically once it is back."]
     if quota:
         lines += ["", f"Quota: {quota[0]} of {quota[1]} completed in {quota[2]} attempts"]
     lines += ["", f"Resumes tailored by AI: {llm_count}/{len(results)}"]
@@ -197,5 +200,7 @@ def daily_log(profile, results, dry_run, llm_count, state=None, quota=None):
               + (f", ready when live {len(ready)}" if ready else "")
               + (f", skipped as not eligible {len(skipped)}" if skipped else "") + "."
               + (f" Quota: {quota[0]} of {quota[1]} completed in {quota[2]} attempts." if quota else "")
+              + (" **The AI was unavailable for part of this run**, so open-ended questions were left for your "
+                 "input; those forms retry automatically once it is back." if ai_down else "")
               + (f" Submitted in the last 7 days: {_week_total(state)}." if state is not None and not dry_run else ""))
     return send(profile, "\n".join(lines), state=state, public_text=public)

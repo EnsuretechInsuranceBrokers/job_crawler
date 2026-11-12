@@ -562,3 +562,36 @@ def test_stopped_form_is_retried_once_answers_change(tmp_path, job):
     assert not s.seen(job, 7, "sig-b")        # the profile gained an answer: try again now
     s.record(job, "submitted", "sig-b")
     assert s.seen(job, 7, "sig-c")            # a submitted application is never redone early
+
+
+def test_ai_outage_falls_back_to_manual_input(monkeypatch, tmp_path, profile, job):
+    from jobbot import llm as llm_mod, notify, report
+    from jobbot.models import Outcome
+
+    class Down:
+        status_code, text, headers = 503, "", {}
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(llm_mod.requests, "post", lambda *a, **k: Down())
+    monkeypatch.setattr(llm_mod.requests, "get", lambda *a, **k: Down())
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda s: None)
+    bot = llm_mod.LLM({"enabled": True}, {"llm": {"provider": "gemini", "api_key": "k"}})
+    out, used = tailor(profile, job, bot)                       # still produces a (keyword-tailored) resume
+    assert not used and out["skills"] and not bot.gave_up
+    for _ in range(3):
+        bot.ask("s", "u")
+    assert bot.gave_up and not bot.enabled and bot.ask("s", "u") is None
+    results = [(job, Outcome("needs_answers", unanswered=["Why us?"]), None, False)]
+    text = report.build(results, False, str(tmp_path), {}, ai_down=True)
+    assert "The AI stopped answering" in text and "Why us?" in text
+    sent = []
+    monkeypatch.setattr(notify, "send", lambda profile, text, files=(), state=None, max_messages=4, public_text=None:
+                        sent.append((text, public_text)) or True)
+    notify.daily_log(profile, results, False, 0, None, quota=(0, 29, 1), ai_down=True)
+    assert "AI unavailable" in sent[0][0] and "AI was unavailable" in sent[0][1]
+    # a form that stopped while the AI was down is retried once it is back
+    s = State(str(tmp_path / "s.enc"), "k")
+    s.record(job, "needs_answers", "answers+ai-off")
+    assert not s.seen(job, 7, "answers+ai-on")

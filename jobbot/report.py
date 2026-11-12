@@ -11,7 +11,7 @@ LABELS = {"ineligible": "skipped: the form requires you to be somewhere you are 
           "manual": "site does not support auto-apply", "error": "error"}
 
 
-def build(results, dry_run, out_dir, asked=None):
+def build(results, dry_run, out_dir, asked=None, ai_down=False):
     """results: list of (job, outcome, pdf_path, used_llm). asked: {question: times seen so far}."""
     asked = asked or {}
     sent = [r for r in results if r[1].status == "submitted"]
@@ -21,6 +21,12 @@ def build(results, dry_run, out_dir, asked=None):
     lines = [f"# jobbot report - {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}", "",
              "**Mode: DRY RUN - nothing was submitted.** Set `apply.dry_run: false` in config.yml to go live."
              if dry_run else "**Mode: LIVE**", ""]
+
+    if ai_down:
+        lines += ["> **The AI stopped answering during this run** (provider busy, quota used up, or key rejected). "
+                  "Nothing was guessed: resumes used keyword tailoring, cover letters used the template, and every "
+                  "open-ended question was left for you below. Those forms are tried again automatically on the "
+                  "first run where the AI is back - or answer them yourself now.", ""]
 
     def row(job, outcome, pdf, _):
         rel = os.path.relpath(pdf, out_dir) if pdf else "-"
