@@ -1,0 +1,40 @@
+name: notify
+
+# Sends one phone notification (Telegram / ntfy / WhatsApp) to the owner using the credentials inside the
+# PROFILE_YAML secret. Used for maintenance notices ("the bot is ready", "a
+# site changed and was fixed"). The text is visible in the public run page, so
+# it must never contain personal data.
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Text to send (public - no personal data)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q requests PyYAML cryptography
+      - name: Send
+        env:
+          PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
+          JOBBOT_KEY: ${{ secrets.JOBBOT_KEY || vars.JOBBOT_KEY }}
+          MESSAGE: ${{ inputs.message }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          from jobbot.config import load_profile
+          from jobbot.notify import send
+          profile = load_profile()
+          sys.exit(0 if send(profile, os.environ["MESSAGE"]) else "no notification channel is configured, or the message was rejected")
+          PY

@@ -1,0 +1,104 @@
+name: jobbot
+
+on:
+  schedule:
+    - cron: "37 3 * * *"   # every day 03:37 UTC (09:07 IST)
+  # Preview: a pull request from this repository (never a fork - forks get no secrets)
+  # runs the bot in forced dry-run mode on a few jobs, so a change can be seen
+  # working, emails included, before it is merged.
+  pull_request:
+    paths: [".github/workflows/jobbot.yml", "jobbot/**", "templates/**", "config.yml", "profile.enc"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Fill forms but do not submit (overrides config.yml)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # save encrypted state to the bot-state branch
+  actions: write    # keep the schedule alive
+  issues: write     # post the daily log / alerts to the "jobbot inbox" issue (GitHub emails them)
+
+concurrency:
+  group: jobbot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
+      JOBBOT_KEY: ${{ secrets.JOBBOT_KEY || vars.JOBBOT_KEY }}   # a secret is safer; a variable also works
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check setup
+        id: setup
+        run: |
+          if [ -z "$PROFILE_YAML" ] && [ -z "$JOBBOT_KEY" ]; then
+            echo "::warning::Neither the JOBBOT_KEY nor the PROFILE_YAML secret is set - nothing to do. See README."
+          else
+            echo "ready=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.setup.outputs.ready
+
+      - uses: actions/setup-python@v5
+        if: steps.setup.outputs.ready
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        if: steps.setup.outputs.ready
+        run: |
+          pip install -q -r requirements.txt
+          playwright install chromium   # runner image already has the system libraries; no apt needed
+
+      - name: Restore encrypted state
+        if: steps.setup.outputs.ready
+        run: |
+          # The state is what stops the bot applying twice. If the branch exists but
+          # cannot be read, fail the run rather than start with an empty memory.
+          mkdir -p .state
+          if git ls-remote --exit-code --heads origin bot-state >/dev/null; then
+            git fetch -q --depth=1 origin bot-state
+            git show FETCH_HEAD:state.enc > .state/state.enc
+            test -s .state/state.enc
+          elif [ $? -ne 2 ]; then
+            echo "::error::could not reach the repository to read saved state"; exit 1
+          fi
+
+      - name: Crawl, tailor, apply
+        if: steps.setup.outputs.ready
+        env:
+          JOBBOT_DRY_RUN: ${{ (inputs.dry_run || github.event_name == 'pull_request') && '1' || '' }}
+        run: python -m jobbot ${{ github.event_name == 'pull_request' && '--limit 12' || '' }}
+
+      - name: Save encrypted state
+        if: always() && steps.setup.outputs.ready && hashFiles('.state/state.enc') != ''
+        run: |
+          cd .state
+          git init -q -b bot-state
+          git add state.enc
+          if [ -f badge.json ]; then git add badge.json; fi
+          git -c user.name=jobbot -c user.email=jobbot@users.noreply.github.com commit -qm "encrypted state"
+          git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" bot-state
+
+      - name: Upload encrypted report
+        if: always() && steps.setup.outputs.ready
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobbot-report
+          path: out/jobbot-report.zip
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Keep schedule alive
+        # GitHub pauses schedules in repos with no activity for 60 days; re-enabling resets the timer.
+        if: always()
+        continue-on-error: true
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/jobbot.yml/enable"

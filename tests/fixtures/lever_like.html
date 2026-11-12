@@ -1,0 +1,40 @@
+<!doctype html><html><body>
+<!-- Mimics the markup style of a Lever application form. -->
+<form id="application-form">
+  <!-- like Ashby's "autofill from resume" drop zone: an unlabelled file input ahead of the first question -->
+  <div class="autofill"><input type="file" id="autofill-input" style="display:none"></div>
+  <ul>
+    <li class="application-question resume"><label><div class="application-label">Resume/CV<span class="required">✱</span></div>
+      <div class="application-field"><input type="file" name="resume" style="opacity:0;position:absolute"></div></label></li>
+    <li class="application-question"><label><div class="application-label">Full name<span class="required">✱</span></div>
+      <div class="application-field"><input type="text" name="name" required></div></label></li>
+    <li class="application-question"><label><div class="application-label">Email<span class="required">✱</span></div>
+      <div class="application-field"><input type="email" name="email" required></div></label></li>
+    <li class="application-question"><label><div class="application-label">Phone</div>
+      <div class="application-field"><input type="text" name="phone"></div></label></li>
+    <li class="application-question"><label><div class="application-label">Current company</div>
+      <div class="application-field"><input type="text" name="org"></div></label></li>
+    <li class="application-question"><label><div class="application-label">GitHub URL</div>
+      <div class="application-field"><input type="text" name="urls[GitHub]"></div></label></li>
+    <li class="application-question custom-question"><div class="application-label">Will you now or in the future require sponsorship?<span class="required">✱</span></div>
+      <div class="application-field"><ul>
+        <li><label><input type="radio" name="cards[a][field0]" value="Yes"><span class="application-answer-alternative">Yes</span></label></li>
+        <li><label><input type="radio" name="cards[a][field0]" value="No"><span class="application-answer-alternative">No</span></label></li></ul></div></li>
+    <li class="application-question custom-question"><div class="application-label">Favourite colour of the week?<span class="required">✱</span></div>
+      <div class="application-field"><ul>
+        <li><label><input type="radio" name="cards[a][field1]" value="Red"><span>Red</span></label></li>
+        <li><label><input type="radio" name="cards[a][field1]" value="Blue"><span>Blue</span></label></li></ul></div></li>
+  </ul>
+  <!--CAPTCHA_SLOT-->
+  <button type="submit" id="btn-submit">Submit application</button>
+</form>
+<script>
+  document.getElementById('application-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const data = {}; for (const [k, v] of fd) data[k] = v instanceof File ? v.name : v;
+    if (!data['cards[a][field0]'] || !data['cards[a][field1]']) return;
+    sessionStorage.setItem('data', JSON.stringify(data));
+    location.href = 'thanks.html';
+  });
+</script></body></html>

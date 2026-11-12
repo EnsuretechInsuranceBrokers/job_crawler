@@ -1,0 +1,64 @@
+# Public, non-personal settings. Everything personal (resume, what you are
+# searching for, answers to application questions) lives in the PROFILE_YAML
+# secret - see profile.example.yml.
+
+sources:
+  # Company job boards on the three big applicant-tracking systems. These have
+  # public JSON APIs and predictable application forms, so they are the only
+  # jobs the bot tries to submit by itself. Add any company: the token is the
+  # last part of its board URL (boards.greenhouse.io/<token>,
+  # jobs.lever.co/<token>, jobs.ashbyhq.com/<token>). Dead tokens are skipped.
+  # From "zscaler" / "paytm" / "tekion" on, every board was verified to have
+  # openings in India (Nov 2026). Dead boards are skipped, so stale entries are harmless.
+  greenhouse: [stripe, airbnb, discord, figma, databricks, cloudflare, gitlab,
+               coinbase, robinhood, instacart, dropbox, twilio, datadog, mongodb,
+               elastic, okta, pinterest, reddit, lyft, asana, brex, duolingo,
+               affirm, anthropic, scaleai, airtable, vercel, samsara, gusto,
+               flexport,
+               zscaler, purestorage, inmobi, zetaglobal, rubrik, tide, glance,
+               toast, netskope, agoda, druva, commvault, groww, sumologic, turing,
+               singlestore, observeai, newrelic, yugabyte, fastly, cockroachlabs,
+               anaplan, highradius, sigmoid, zenoti, alphasense, fictiv, pubmatic,
+               kaseya, celonis, onetrust, smartsheet, graphcore, fivetran,
+               hackerrank, truecaller, crunchyroll, zocdoc, cloudsek, dunnhumby,
+               roblox, zinier, zoominfo, abnormalsecurity, bitgo, zuora, coursera,
+               fourkites, starburst, apolloio, contentstack, deliveroo, jfrog,
+               reltio, bloomreach, godaddy, launchdarkly, mixpanel, neo4j, simpplr,
+               wrike, yext, earnin, jumio, roku, thoughtworks]
+  lever: [palantir, spotify, veeva, outreach,
+          paytm, gohighlevel, meesho, zeta, mindtickle, fampay, linkedin, cred,
+          hevodata, saviynt, coupa, nium, netomi, entrata]
+  ashby: [ramp, notion, linear, openai, posthog, supabase, replit, vanta,
+          elevenlabs, cohere, zapier,
+          tekion, sarvam, atlys, snowflake, clickhouse, atlan, composio, plane,
+          opengov, kong, uipath, airwallex, anyscale, poshmark, commure,
+          demandbase, redis, applied]
+  # Free aggregator APIs. Their jobs link to arbitrary sites, so matches are
+  # tailored and put in your report for a manual click, not auto-submitted.
+  remotive: true
+  remoteok: true
+  arbeitnow: true
+
+match:
+  min_score: 0.55        # 0.5 = title matches, +0.5 scaled by skill overlap
+  max_age_days: 60       # ignore postings older than this
+
+apply:
+  dry_run: true          # true: fill forms but never press submit. Flip to false when the report looks right.
+  max_per_run: 29        # auto-apply attempts per run (daily run -> about 203 a week)
+  max_manual_per_run: 10 # tailored "apply yourself" packets per run
+  max_per_company: 2     # per run, so one employer is not flooded
+  reapply_after_days: 7  # a still-open job may be applied to again after this many days; 0 = never twice
+  skip_if_ineligible: true  # do not submit when a required "are you located in ...?" must truthfully be answered no
+  accept_consent: true   # tick required privacy/consent checkboxes
+  delay_seconds: 20      # pause between applications
+  public_badge: true     # publish a counts-only badge ("3 this week · 12 total") next to the encrypted state
+  max_minutes: 70        # stop starting new applications after this long, so the run always finishes cleanly
+
+llm:
+  # Optional AI for tailoring, cover letters and open questions. The provider and
+  # its free API key go in your profile (see profile.example.yml); without one the
+  # bot uses keyword tailoring and a template cover letter.
+  enabled: true
+  min_seconds_between_calls: 4   # pacing for free-tier per-minute limits
+  answer_questions: true # let the model answer unknown required questions, strictly from your profile

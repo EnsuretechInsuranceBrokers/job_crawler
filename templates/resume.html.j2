@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ p.name }} - Resume</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, "Liberation Sans", sans-serif; font-size: 10.5pt; line-height: 1.38; color: #1a1a1a; margin: 0; }
+  h1 { font-size: 21pt; margin: 0 0 2pt; letter-spacing: .3pt; }
+  .contact { font-size: 9.5pt; color: #444; margin-bottom: 9pt; }
+  .contact a { color: #444; text-decoration: none; }
+  h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 1.1pt; border-bottom: 1px solid #999; padding-bottom: 2pt; margin: 11pt 0 5pt; }
+  .row { display: flex; justify-content: space-between; gap: 12pt; }
+  .role { font-weight: bold; }
+  .meta { color: #555; white-space: nowrap; }
+  .entry { margin-bottom: 6pt; break-inside: avoid; }
+  ul { margin: 2pt 0 0; padding-left: 14pt; }
+  li { margin-bottom: 1.5pt; }
+  p { margin: 0; }
+</style>
+</head>
+<body>
+<h1>{{ p.name }}</h1>
+<div class="contact">
+  {%- set parts = [p.email, p.phone, p.location] | select | list -%}
+  {{ parts | join(" · ") }}
+  {%- for label, url in p.links.items() if url %} · <a href="{{ url }}">{{ url | replace("https://", "") | replace("http://", "") | replace("www.", "") }}</a>{% endfor %}
+</div>
+
+{% if p.summary %}<h2>Summary</h2><p>{{ p.summary }}</p>{% endif %}
+
+{% if p.skills %}<h2>Skills</h2><p>{{ p.skills | join(" · ") }}</p>{% endif %}
+
+<h2>Experience</h2>
+{% for e in p.experience %}
+<div class="entry">
+  <div class="row"><span class="role">{{ e.title }}{% if e.company %} — {{ e.company }}{% endif %}</span>
+    <span class="meta">{{ e.start }}{% if e.end %} – {{ e.end }}{% endif %}{% if e.location %} · {{ e.location }}{% endif %}</span></div>
+  {% if e.bullets %}<ul>{% for b in e.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% endfor %}
+
+{% if p.projects %}<h2>Projects</h2>
+{% for pr in p.projects %}
+<div class="entry">
+  <div class="row"><span><span class="role">{{ pr.name }}</span>{% if pr.tagline %} — {{ pr.tagline }}{% endif %}</span>{% if pr.link %}<span class="meta">{{ pr.link | replace("https://", "") }}</span>{% endif %}</div>
+  {% if pr.bullets %}<ul>{% for b in pr.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% endfor %}{% endif %}
+
+{% if p.education %}<h2>Education</h2>
+{% for ed in p.education %}
+<div class="row"><span><span class="role">{{ ed.degree }}</span>{% if ed.school %} — {{ ed.school }}{% endif %}</span><span class="meta">{{ ed.year }}</span></div>
+{% if ed.details %}<p>{{ ed.details }}</p>{% endif %}
+{% endfor %}{% endif %}
+</body>
+</html>
