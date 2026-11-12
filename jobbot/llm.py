@@ -41,6 +41,7 @@ class LLM:
         self.failures = 0
         self.json_mode = True
         self.calls = self.answered = 0
+        self.gave_up = False  # True once the provider stopped answering during this run
         self.min_interval = float(cfg.get("min_seconds_between_calls", 4))  # stay under free per-minute limits
         self._last = 0.0
         self.native_gemini = "generativelanguage.googleapis.com" in self.base and not self.base.endswith("/openai")
@@ -115,6 +116,7 @@ class LLM:
             detail(f"LLM call failed: {type(e).__name__} status={status} body={(r.text[:200] if r is not None else '')!r}")
             if self.failures >= 3 or status in (401, 403, 404):
                 self.enabled = False  # bad key or quota gone: stop trying this run
+                self.gave_up = True
                 log(f"LLM disabled for this run ({type(e).__name__} {status}); using keyword tailoring")
             return None
 

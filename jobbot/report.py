@@ -11,7 +11,7 @@ LABELS = {"ineligible": "skipped: the form requires you to be somewhere you are 
           "manual": "site does not support auto-apply", "error": "error"}
 
 
-def build(results, dry_run, out_dir, asked=None):
+def build(results, dry_run, out_dir, asked=None, ai_down=False):
     """results: list of (job, outcome, pdf_path, used_llm). asked: {question: times seen so far}."""
     asked = asked or {}
     sent = [r for r in results if r[1].status == "submitted"]
@@ -22,6 +22,12 @@ def build(results, dry_run, out_dir, asked=None):
              "**Mode: DRY RUN - nothing was submitted.** Set `apply.dry_run: false` in config.yml to go live."
              if dry_run else "**Mode: LIVE**", ""]
 
+    if ai_down:
+        lines += ["> **The AI stopped answering during this run** (provider busy, quota used up, or key rejected). "
+                  "Nothing was guessed: resumes used keyword tailoring, cover letters used the template, and every "
+                  "open-ended question was left for you below. Those forms are tried again automatically on the "
+                  "first run where the AI is back - or answer them yourself now.", ""]
+
     def row(job, outcome, pdf, _):
         rel = os.path.relpath(pdf, out_dir) if pdf else "-"
         return f"- **{job.title}** - {job.company} ({job.location or 'n/a'}), score {job.score}\n  - {job.url}\n  - files: `{os.path.dirname(rel)}/` (resume + cover letter)"
@@ -31,9 +37,18 @@ def build(results, dry_run, out_dir, asked=None):
     if ready:
         lines += [f"## Would be submitted when live ({len(ready)})", ""] + [row(*r) for r in ready] + [""]
     if todo:
-        lines += [f"## Needs you ({len(todo)})", "", "Open the link, upload the tailored PDF, submit.", ""]
+        lines += [f"## Needs you ({len(todo)})", "",
+                  "Two ways to finish each one:", "",
+                  "1. **Let the bot finish it.** Add the missing answer to `answers:` in your profile and re-seal it. "
+                  "The bot tries the form again on its next run - it does not wait a week.",
+                  "2. **Finish it yourself now.** Open the *apply* link, upload the resume and cover letter from the "
+                  "job's folder, answer the listed questions, submit.", "",
+                  "The bot never waits on these: it moved on to the next job straight away.", ""]
         for job, outcome, pdf, llm in todo:
             lines.append(row(job, outcome, pdf, llm))
+            from .apply import apply_url
+            if apply_url(job):
+                lines.append(f"  - apply: {apply_url(job)}")
             lines.append(f"  - why: {LABELS.get(outcome.status, outcome.status)}"
                          + (f" ({outcome.detail})" if outcome.status in ("error", "unconfirmed") else ""))
             if pdf and os.path.exists(os.path.join(os.path.dirname(pdf), "form.png")):

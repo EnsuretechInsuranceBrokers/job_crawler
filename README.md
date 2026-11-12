@@ -134,8 +134,8 @@ button. To let it submit:
 1. Read one dry-run report first. `dashboard.html` shows what it would have sent
    and to whom; open two or three of the tailored PDFs.
 2. Set `apply.dry_run: false` in `config.yml` and commit.
-3. For the first live days consider `max_per_run: 5`, then raise it. The default
-   of 29 a day is about 203 applications a week.
+3. For the first live days consider `target_per_run: 5`, then raise it. The
+   default of 29 completed applications a day is about 203 a week.
 
 Things worth knowing before you do:
 
@@ -181,6 +181,40 @@ Each run uploads `jobbot-report` (an AES-encrypted zip; the password is your
   and for any form that stopped or was not accepted, `form.png` – a screenshot
   of the form exactly as the bot left it.
 
+## When an application needs you
+
+The bot never waits. A form that stops (unanswered question, CAPTCHA,
+verification code) is recorded with everything needed to finish it, and the bot
+moves straight on to the next job. Stopped forms do not count towards the daily
+quota: `target_per_run` is a number of **completed** applications, and the bot
+keeps going down the list until it reaches it, runs out of matching jobs, or has
+made `attempt_factor` times as many attempts.
+
+To see and finish the stopped ones, open the run's report (`report.md` or
+`dashboard.html` inside the `jobbot-report` artifact; the zip password is the
+`state_key` in your profile). Each job under "Needs you" lists the direct link
+to its application form, the reason it stopped, the exact questions left open,
+a screenshot of the form as the bot left it, and a folder with the tailored
+resume and cover letter. Then either:
+
+1. **Let the bot finish it** – add the missing answer to `answers:` in your
+   profile and re-seal it. The form is tried again on the next run, not a week
+   later.
+2. **Finish it yourself** – open the link, upload the two PDFs, answer the
+   questions, submit.
+
+**If the AI stops working** (provider busy, free quota used up, key revoked) the
+bot does not guess and does not stop. Resumes fall back to keyword tailoring,
+cover letters to the template, and every open-ended question is handed to you
+like any other stopped form; the report and the daily email say so. Those forms
+are tried again automatically on the first run where the AI answers again. To
+make a question independent of the AI altogether, put your own answer in
+`answers:` – your answers always take priority over the model.
+
+The email from GitHub carries counts only, because this repository is public.
+For job titles and links in the email itself, set `github_inbox: {details: true}`
+(public), or add an `smtp:` block (private email with the PDFs attached).
+
 ## What will still need you
 
 No bot can honestly promise 100% unattended applications:
@@ -221,7 +255,7 @@ $0. Actions minutes are free for public repositories and all job sources are
 free public APIs. The AI is optional and uses a free-tier key you supply; if its
 quota runs out mid-run the bot carries on with keyword tailoring. Use is still
 subject to GitHub's Actions terms and each site's terms; the pace is deliberate
-(`max_per_run`, `max_per_company`, `delay_seconds`).
+(`target_per_run`, `max_per_company`, `delay_seconds`).
 
 ### Optional: AI tailoring (one free API key)
 

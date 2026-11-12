@@ -37,27 +37,27 @@ def run(args):
         f"llm: {'on' if llm.enabled else 'off'}; remembered jobs: {len(state.jobs)}")
 
     reapply = int(acfg.get("reapply_after_days", 0) or 0)
-    picks = select(crawl(cfg["sources"]), profile, cfg, lambda job: state.seen(job, reapply))
+    # Fingerprint of what the bot can answer. A form that stopped on a question is tried again
+    # as soon as this changes - i.e. after you add the answer - instead of waiting a week.
+    import hashlib
+    import json
+    def fingerprint():
+        # includes whether the AI is answering right now: a form that stopped while the AI was
+        # down is tried again on the first run where it is back
+        return hashlib.sha256(json.dumps([profile.get("answers"), llm.enabled], sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+    sig = fingerprint()
+    picks = select(crawl(cfg["sources"]), profile, cfg, lambda job: state.seen(job, reapply, sig))
     log(f"new matching jobs: {len(picks)}")
     from .insights import skills_gap
     gap = skills_gap(picks, profile)
 
-    # Choose what to handle this run, best score first, within the caps.
-    chosen, per_company, n_auto, n_manual = [], {}, 0, 0
-    max_auto = args.limit or acfg["max_per_run"]
-    for job in picks:
-        company = job.company.lower()
-        if per_company.get(company, 0) >= acfg.get("max_per_company", 2):
-            continue
-        auto = apply_url(job) is not None
-        if auto and n_auto < max_auto:
-            n_auto += 1
-        elif not auto and n_manual < (args.limit or acfg.get("max_manual_per_run", 10)):
-            n_manual += 1
-        else:
-            continue
-        per_company[company] = per_company.get(company, 0) + 1
-        chosen.append((job, auto))
+    # The quota is a number of COMPLETED applications, not attempts: a form that stops on a
+    # question does not count, and the bot moves straight on to the next best job.
+    target = args.limit or int(acfg.get("target_per_run", acfg.get("max_per_run", 29)))
+    max_attempts = int(target * float(acfg.get("attempt_factor", 3)))
+    max_manual = args.limit or int(acfg.get("max_manual_per_run", 10))
+    per_company, completed, attempts, n_manual = {}, 0, 0, 0
 
     results = []
     started, budget = time.time(), 60 * float(acfg.get("max_minutes", 70))
@@ -68,12 +68,24 @@ def run(args):
         browser = pw.chromium.launch(executable_path=os.environ.get("JOBBOT_CHROMIUM") or None,
                                      proxy={"server": proxy} if proxy else None)
         context = browser.new_context(locale="en-US", viewport={"width": 1280, "height": 1600})
-        for n, (job, auto) in enumerate(chosen, 1):
+        n = 0
+        for job in picks:
+            auto_open = completed < target and attempts < max_attempts
+            if not auto_open and n_manual >= max_manual:
+                break  # quota met (or attempts used up) and the manual list is full
+            company = job.company.lower()
+            if per_company.get(company, 0) >= acfg.get("max_per_company", 2):
+                continue
+            auto = apply_url(job) is not None
+            if (auto and not auto_open) or (not auto and n_manual >= max_manual):
+                continue
             if time.time() - started > budget:
                 # Leave time to save state and upload the report; the rest is picked up next run.
-                log(f"time budget reached after {n - 1} of {len(chosen)} jobs; remaining jobs wait for the next run")
+                log(f"time budget reached after {n} jobs; remaining jobs wait for the next run")
                 break
-            detail(f"[{n}/{len(chosen)}] {job.title} @ {job.company} ({job.source}, score {job.score})")
+            per_company[company] = per_company.get(company, 0) + 1
+            attempts, n_manual, n = attempts + auto, n_manual + (not auto), n + 1
+            detail(f"[{n}] {job.title} @ {job.company} ({job.source}, score {job.score})")
             pdf, letter_pdf, used_llm = None, None, False
             try:
                 tailored, used_llm = tailor(profile, job, llm)
@@ -100,11 +112,12 @@ def run(args):
                     pass
             detail(f"   -> {outcome.status}: {outcome.detail}" + "".join(f"\n      ? {q}" for q in outcome.unanswered))
             results.append((job, outcome, pdf, used_llm))
+            completed += outcome.status in ("submitted", "dry_run_ok")
             if not dry:
-                state.record(job, outcome.status)
+                state.record(job, outcome.status, fingerprint())
                 state.save()  # after every job, so a later crash loses nothing
                 notify.alert(profile, job, outcome, [x for x in (pdf, letter_pdf) if x], state)
-                if auto and n < len(chosen):
+                if auto:
                     time.sleep(acfg.get("delay_seconds", 20))
         browser.close()
 
@@ -117,11 +130,15 @@ def run(args):
     for _, o, _, _ in results:
         for q in o.unanswered:
             asked[q] = asked.get(q, 0) + 1
-    text = report.build(results, dry, out_dir, asked)
+    if llm.gave_up:
+        log("AI stopped answering during this run: resumes fell back to keyword tailoring and open questions were left for manual input")
+    text = report.build(results, dry, out_dir, asked, ai_down=llm.gave_up)
     report.dashboard(state, results, dry, out_dir, gap)
     if acfg.get("public_badge", True) and not args.demo:
         report.badge(state, dry, os.path.join(ROOT, ".state", "badge.json"))
     log("results: " + (", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "nothing to do"))
+    log(f"quota: {completed} of {target} completed in {attempts} attempts"
+        + ("" if completed >= target else " - ran out of matching jobs, attempts or time"))
     log(f"resumes tailored by LLM: {sum(1 for r in results if r[3])}/{len(results)}; "
         f"model calls answered: {llm.answered}/{llm.calls}; took {int((time.time() - started) / 60)} min")
     if util.VERBOSE:
@@ -129,7 +146,8 @@ def run(args):
 
     if not args.demo:
         report.encrypt_zip(out_dir, profile["state_key"])
-        if notify.daily_log(profile, results, dry, sum(1 for r in results if r[3]), state):
+        if notify.daily_log(profile, results, dry, sum(1 for r in results if r[3]), state, quota=(completed, target, attempts),
+                            ai_down=llm.gave_up):
             log("daily log sent to phone")
         state.save()  # dry runs record no jobs, so this only keeps settings such as the Telegram chat
         if profile.get("smtp") and results:
