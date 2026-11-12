@@ -11,8 +11,9 @@ LABELS = {"needs_answers": "form has questions your profile cannot answer", "cap
           "manual": "site does not support auto-apply", "error": "error"}
 
 
-def build(results, dry_run, out_dir):
-    """results: list of (job, outcome, pdf_path, used_llm)."""
+def build(results, dry_run, out_dir, asked=None):
+    """results: list of (job, outcome, pdf_path, used_llm). asked: {question: times seen so far}."""
+    asked = asked or {}
     sent = [r for r in results if r[1].status == "submitted"]
     ready = [r for r in results if r[1].status == "dry_run_ok"]
     todo = [r for r in results if r[1].status not in ("submitted", "dry_run_ok")]
@@ -35,10 +36,11 @@ def build(results, dry_run, out_dir):
             lines.append(f"  - why: {LABELS.get(outcome.status, outcome.status)}" + (f" ({outcome.detail})" if outcome.status == "error" else ""))
             lines += [f"  - unanswered: {q}" for q in outcome.unanswered]
         lines.append("")
-    questions = sorted({q for _, o, _, _ in results for q in o.unanswered})
+    questions = sorted({q for _, o, _, _ in results for q in o.unanswered}, key=lambda q: (-asked.get(q, 1), q))
     if questions:
-        lines += ["## Teach the bot", "", "Add a regex for each of these to `answers:` in your PROFILE_YAML secret "
-                  "and similar forms will go through unattended:", ""] + [f"- {q}" for q in questions] + [""]
+        lines += ["## Teach the bot", "", "Add a pattern for each of these to `answers:` in your profile and similar "
+                  "forms will go through unattended. Most frequent first:", ""]
+        lines += [f"- {q}" + (f"  _(seen {asked[q]} times)_" if asked.get(q, 1) > 1 else "") for q in questions] + [""]
     audit = [(job, q, a) for job, o, _, _ in results for q, a in o.llm_answers]
     if audit:
         lines += ["## Answers written by the model (please audit)", ""]
@@ -49,6 +51,32 @@ def build(results, dry_run, out_dir):
     with open(os.path.join(out_dir, "report.md"), "w") as f:
         f.write(text)
     return text
+
+
+def dashboard(state, results, dry_run, out_dir):
+    """Private HTML overview of everything the bot has done; lives inside the encrypted report."""
+    from collections import Counter
+
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+    from .config import ROOT
+    jobs = sorted(state.jobs.values(), key=lambda v: -v["ts"])
+    now = time.time()
+    days = [time.strftime("%d %b", time.gmtime(now - d * 86400)) for d in range(13, -1, -1)]
+    per_day = Counter(time.strftime("%d %b", time.gmtime(v["ts"])) for v in jobs if v["status"] == "submitted")
+    week = [v for v in jobs if now - v["ts"] < 7 * 86400]
+    env = Environment(loader=FileSystemLoader(os.path.join(ROOT, "templates")), autoescape=select_autoescape(["html", "j2"]))
+    html = env.get_template("dashboard.html.j2").render(
+        generated=time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), dry_run=dry_run, labels=LABELS,
+        totals=Counter(v["status"] for v in jobs), week=Counter(v["status"] for v in week),
+        bars=[(d, per_day.get(d, 0)) for d in days], peak=max([per_day.get(d, 0) for d in days] + [1]),
+        companies=Counter(v["company"] for v in jobs if v["status"] == "submitted").most_common(12),
+        questions=sorted(state.meta.get("unanswered", {}).items(), key=lambda kv: -kv[1])[:25],
+        run=[{"title": j.title, "company": j.company, "location": j.location, "url": j.url, "score": j.score,
+              "status": o.status, "llm": llm} for j, o, _, llm in results],
+        history=[dict(v, when=time.strftime("%d %b %Y", time.gmtime(v["ts"]))) for v in jobs[:300]])
+    with open(os.path.join(out_dir, "dashboard.html"), "w") as f:
+        f.write(html)
 
 
 def encrypt_zip(out_dir, password, name="jobbot-report.zip"):

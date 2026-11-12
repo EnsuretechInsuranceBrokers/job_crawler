@@ -137,6 +137,11 @@ def send(profile, text, files=(), state=None, max_messages=4, public_text=None):
     return delivered
 
 
+def _week_total(state):
+    import time
+    return sum(1 for v in state.jobs.values() if v["status"] == "submitted" and time.time() - v["ts"] < 7 * 86400)
+
+
 ALERTS = {"captcha": "CAPTCHA to solve", "verification": "Email verification code needed",
           "unconfirmed": "Submitted but not confirmed - please check"}
 
@@ -184,5 +189,6 @@ def daily_log(profile, results, dry_run, llm_count, state=None):
         counts[why.get(o.status, o.status)] = counts.get(why.get(o.status, o.status), 0) + 1
     public = (f"**Daily log{' (dry run - nothing sent)' if dry_run else ''}:** submitted {len(sent)}, need you {len(todo)}"
               + (f" ({', '.join(f'{v} {k}' for k, v in sorted(counts.items()))})" if counts else "")
-              + (f", ready when live {len(ready)}" if ready else "") + ".")
+              + (f", ready when live {len(ready)}" if ready else "") + "."
+              + (f" Submitted in the last 7 days: {_week_total(state)}." if state is not None and not dry_run else ""))
     return send(profile, "\n".join(lines), state=state, public_text=public)

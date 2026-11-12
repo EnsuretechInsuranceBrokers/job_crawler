@@ -447,3 +447,33 @@ def test_education_and_tight_ranges(profile):
     notice = [{"text": t} for t in ("90 days or less", "60 days or less", "45 days or less", "30 days or less", "15 days or less", "Immediate")]
     assert pick_option("2 weeks", notice) == 4 and pick_option("5 weeks", notice) == 2 and pick_option("0 days", notice) == 5
     assert pick_option("2", [{"text": "1-3"}, {"text": "3-5"}, {"text": "5+"}]) == 0
+
+
+def test_answer_memory_and_dashboard(tmp_path, profile, job):
+    from jobbot import report
+    from jobbot.apply import llm_answers
+    from jobbot.models import Outcome
+
+    class Counting:
+        enabled, calls = True, 0
+
+        def ask(self, system, user, as_json=False):
+            Counting.calls += 1
+            return {"q1": "No", "q2": "Because I like queues."}
+
+    memory = {}
+    qs = [{"jb": "q1", "label": "Do you smoke?", "options": [{"text": "Yes"}, {"text": "No"}]},
+          {"jb": "q2", "label": "Why us?"}]
+    assert llm_answers(Counting(), qs, profile, job, memory) == {"q1": "No", "q2": "Because I like queues."}
+    assert list(memory.values()) == ["No"]                       # only the multiple-choice answer is remembered
+    assert llm_answers(Counting(), [dict(qs[0], jb="x9")], profile, job, memory) == {"x9": "No"} and Counting.calls == 1
+
+    state = State(str(tmp_path / "s.enc"), "k")
+    state.record(job, "submitted")
+    state.meta["unanswered"] = {"Shoe size?": 3}
+    results = [(job, Outcome("submitted"), None, True), (job, Outcome("needs_answers", unanswered=["Shoe size?"]), None, False)]
+    report.dashboard(state, results, False, str(tmp_path))
+    html = open(tmp_path / "dashboard.html").read()
+    assert "Initech" in html and "Shoe size?" in html and "submitted, all time" in html and "<script" not in html
+    text = report.build(results, False, str(tmp_path), state.meta["unanswered"])
+    assert "seen 3 times" in text

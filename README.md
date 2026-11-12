@@ -5,6 +5,24 @@ resume to each matching job, and applies for you where the application form
 allows it. Whatever it cannot submit lands in a short report with the tailored
 PDF and the link, so finishing by hand takes a minute.
 
+```mermaid
+flowchart LR
+    A[Company boards<br/>Greenhouse · Lever · Ashby] --> C
+    B[Aggregators<br/>Remotive · RemoteOK · Arbeitnow] --> C
+    C{Match<br/>title · location · skills} --> D[Tailor resume<br/>+ cover letter]
+    M[(Encrypted memory<br/>bot-state branch)] <--> C
+    P[(profile.enc)] --> D
+    D --> E{Open application<br/>form?}
+    E -- yes --> F[Fill form]
+    F --> G{Every required<br/>question answered?}
+    G -- yes --> H[Submit]
+    G -- no / CAPTCHA --> I[Hand to you]
+    E -- no --> I
+    H --> R[Encrypted report<br/>+ dashboard]
+    I --> R
+    R --> N[Email via GitHub<br/>Telegram · ntfy · WhatsApp]
+```
+
 ## What it does on every run
 
 1. **Crawl** – public JSON APIs of company boards on Greenhouse, Lever and Ashby
@@ -22,7 +40,11 @@ PDF and the link, so finishing by hand takes a minute.
 5. **Apply** – opens the Greenhouse/Lever/Ashby form in headless Chromium, fills
    it from your profile and your `answers`, uploads the tailored resume and
    cover letter and submits – but only if every required question has an answer.
-6. **Notify** – a phone alert (Telegram, ntfy or WhatsApp) the moment a form
+6. **Remember** – every handled job is recorded (encrypted) so it is not applied
+   to twice within `reapply_after_days`; multiple-choice answers the AI gave are
+   reused so the same question always gets the same answer; questions that stop
+   forms are counted so the report can tell you which one to teach it next.
+7. **Notify** – a phone alert (Telegram, ntfy or WhatsApp) the moment a form
    needs you (CAPTCHA, verification code), a daily log after every run, an encrypted zip
    (workflow artifact) and, optionally, an email with the PDFs attached.
 
@@ -102,6 +124,16 @@ session on GitHub's runner, which is gone by the time you read the message. The
 alert is your cue to open the link and finish that one application yourself,
 with the tailored PDFs already on your phone (Telegram or email).
 
+## What is in the report
+
+Each run uploads `jobbot-report` (an AES-encrypted zip; the password is your
+`state_key`):
+
+- `dashboard.html` – totals, applications per day, outcome of every job in the
+  run, the questions that stop forms most often, and the full history.
+- `report.md` – the same run as text, with a "Teach the bot" list.
+- one folder per job with the tailored resume and cover letter (PDF and text).
+
 ## What will still need you
 
 No bot can honestly promise 100% unattended applications:
@@ -166,8 +198,7 @@ forms otherwise stop for manual input. Your resume text is sent to that provider
   over IMAP and queued with tailored documents – coverage of those sites
   without automating them.
 - Automatic discovery of which applicant-tracking system a company uses.
-- Outcome tracking: reply and rejection detection, weekly statistics.
-- A status page generated from the encrypted state.
+- Outcome tracking: reply and rejection detection from the inbox.
 
 ## Running locally
 

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jobbot dashboard</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1c1c1a; --muted:#6b6b66; --line:#e3e3de; --accent:#2f6f4f; --warn:#a15c00; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#201f1d; --ink:#ecece8; --muted:#a3a39c; --line:#33322f; --accent:#7fc9a2; --warn:#e0a85a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 16px 48px; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 2px; } h2 { font-size: 16px; margin: 28px 0 10px; }
+  .sub { color: var(--muted); margin-bottom: 20px; }
+  .tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .tile b { display:block; font-size:28px; line-height:1.1; } .tile span { color:var(--muted); font-size:13px; }
+  .bars { display:flex; align-items:flex-end; gap:6px; height:140px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 14px 8px; }
+  .bar { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; height:100%; font-size:11px; color:var(--muted); }
+  .bar i { display:block; width:100%; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; }
+  .bar em { font-style:normal; color:var(--ink); font-size:12px; }
+  .wrap { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; } th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  td.t { white-space:normal; min-width:220px; } th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  tr:last-child td { border-bottom:0; } a { color:var(--accent); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; border:1px solid var(--line); }
+  .ok { color:var(--accent); border-color:var(--accent); } .todo { color:var(--warn); border-color:var(--warn); }
+  ol { margin:0; padding:12px 16px 12px 36px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+</style></head>
+<body><main>
+<h1>jobbot dashboard</h1>
+<div class="sub">Generated {{ generated }}{% if dry_run %} · this run was a dry run, nothing was submitted{% endif %}</div>
+
+<div class="tiles">
+  <div class="tile"><b>{{ totals.get("submitted", 0) }}</b><span>submitted, all time</span></div>
+  <div class="tile"><b>{{ week.get("submitted", 0) }}</b><span>submitted, last 7 days</span></div>
+  <div class="tile"><b>{{ totals.values() | sum - totals.get("submitted", 0) }}</b><span>handed to you, all time</span></div>
+  <div class="tile"><b>{{ run | selectattr("status", "in", ["submitted", "dry_run_ok"]) | list | length }} / {{ run | length }}</b><span>forms completed this run</span></div>
+</div>
+
+<h2>Submitted per day, last 14 days</h2>
+<div class="bars">{% for day, n in bars %}<div class="bar"><em>{{ n if n else "" }}</em><i style="height: {{ (n / peak * 100) | round(1) }}%"></i>{{ day }}</div>{% endfor %}</div>
+
+<h2>This run</h2>
+<div class="wrap"><table><tr><th>Role</th><th>Company</th><th>Location</th><th>Match</th><th>Outcome</th><th>AI tailored</th></tr>
+{% for r in run %}<tr><td class="t"><a href="{{ r.url }}">{{ r.title }}</a></td><td>{{ r.company }}</td><td>{{ r.location }}</td><td>{{ r.score }}</td>
+<td><span class="pill {{ 'ok' if r.status in ['submitted', 'dry_run_ok'] else 'todo' }}">{{ {"submitted": "submitted", "dry_run_ok": "ready"}.get(r.status, labels.get(r.status, r.status)) }}</span></td><td>{{ "yes" if r.llm else "no" }}</td></tr>
+{% else %}<tr><td colspan="6">No new matching jobs this run.</td></tr>{% endfor %}</table></div>
+
+{% if questions %}<h2>Questions that stop forms most often</h2>
+<ol>{% for q, n in questions %}<li>{{ q }} <span class="pill">{{ n }}×</span></li>{% endfor %}</ol>{% endif %}
+
+{% if companies %}<h2>Most applications by company</h2>
+<div class="wrap"><table><tr><th>Company</th><th>Submitted</th></tr>{% for c, n in companies %}<tr><td>{{ c }}</td><td>{{ n }}</td></tr>{% endfor %}</table></div>{% endif %}
+
+<h2>History (latest {{ history | length }})</h2>
+<div class="wrap"><table><tr><th>Date</th><th>Role</th><th>Company</th><th>Outcome</th><th>Rounds</th></tr>
+{% for h in history %}<tr><td>{{ h.when }}</td><td class="t"><a href="{{ h.url }}">{{ h.title }}</a></td><td>{{ h.company }}</td>
+<td><span class="pill {{ 'ok' if h.status == 'submitted' else 'todo' }}">{{ labels.get(h.status, h.status) }}</span></td><td>{{ h.rounds or "" }}</td></tr>
+{% else %}<tr><td colspan="5">Nothing recorded yet - dry runs are not saved to history.</td></tr>{% endfor %}</table></div>
+</main></body></html>

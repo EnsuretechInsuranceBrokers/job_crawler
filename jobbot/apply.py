@@ -343,17 +343,30 @@ For questions with options the answer must be exactly one of the option texts.
 For open questions about motivation or fit, write 2-4 honest sentences grounded in the candidate's real experience and the job posting; invent nothing."""
 
 
-def llm_answers(llm, questions, profile, job):
+def _memo_key(q):
+    return norm(q["label"]) + "|" + "|".join(norm(o["text"]) for o in q.get("options") or [])
+
+
+def llm_answers(llm, questions, profile, job, memory=None):
+    """Answers from the model. Choices among fixed options are remembered between runs, so the
+    same question always gets the same answer (and costs no quota); essays are written fresh."""
+    memory = memory if memory is not None else {}
+    known = {q["jb"]: memory[_memo_key(q)] for q in questions if q.get("options") and _memo_key(q) in memory}
+    questions = [q for q in questions if q["jb"] not in known]
     if not (llm and llm.enabled and questions):
-        return {}
+        return known
     facts = {k: v for k, v in profile.items() if k not in ("state_key", "smtp", "search")}
     listing = [{"id": q["jb"], "question": q["label"], **({"options": [o["text"] for o in q["options"]]} if q.get("options") else {})}
                for q in questions]
     reply = llm.ask(LLM_SYSTEM, f"CANDIDATE:\n{json.dumps(facts, default=str)}\n\nJOB: {job.title} at {job.company}\n"
                                 f"{job.description[:3000]}\n\nQUESTIONS:\n{json.dumps(listing)}", as_json=True)
     if not isinstance(reply, dict):
-        return {}
-    return {k: str(v).strip() for k, v in reply.items() if isinstance(v, (str, int, float)) and str(v).strip()}
+        return known
+    fresh = {k: str(v).strip() for k, v in reply.items() if isinstance(v, (str, int, float)) and str(v).strip()}
+    for q in questions:
+        if q.get("options") and q["jb"] in fresh and pick_option(fresh[q["jb"]], q["options"]) is not None:
+            memory[_memo_key(q)] = fresh[q["jb"]]
+    return {**known, **fresh}
 
 
 class FormFiller:
@@ -511,7 +524,8 @@ class FormFiller:
         open_fields = still_open()
         if open_fields and self.cfg.get("llm_answer_questions", True):
             askable = {f["jb"]: f for f in open_fields if f["kind"] != "file" and f["label"]}
-            for jb, a in llm_answers(self.llm, list(askable.values()), self.profile, self.job).items():
+            for jb, a in llm_answers(self.llm, list(askable.values()), self.profile, self.job,
+                                     self.cfg.get("memory")).items():
                 f = askable.get(jb)
                 try:
                     if f and self.put(f, a):

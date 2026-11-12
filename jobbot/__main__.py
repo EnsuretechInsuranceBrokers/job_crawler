@@ -31,6 +31,7 @@ def run(args):
     out_dir = os.path.join(ROOT, "out")
     os.makedirs(out_dir, exist_ok=True)
     state = State(os.path.join(ROOT, ".state", "demo.enc" if args.demo else "state.enc"), profile["state_key"])
+    acfg["memory"] = state.meta.setdefault("answers", {})   # remembered multiple-choice answers
     llm = LLM(cfg["llm"], profile)
     log(f"mode: {'DRY RUN' if dry else 'LIVE'}{' (demo profile)' if args.demo else ''}; "
         f"llm: {'on' if llm.enabled else 'off'}; remembered jobs: {len(state.jobs)}")
@@ -98,7 +99,12 @@ def run(args):
         counts[o.status] = counts.get(o.status, 0) + 1
     summary = {"submitted": counts.get("submitted", 0),
                "todo": sum(v for k, v in counts.items() if k not in ("submitted", "dry_run_ok"))}
-    text = report.build(results, dry, out_dir)
+    asked = state.meta.setdefault("unanswered", {})         # how often each open question has come up
+    for _, o, _, _ in results:
+        for q in o.unanswered:
+            asked[q] = asked.get(q, 0) + 1
+    text = report.build(results, dry, out_dir, asked)
+    report.dashboard(state, results, dry, out_dir)
     log("results: " + (", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "nothing to do"))
     log(f"resumes tailored by LLM: {sum(1 for r in results if r[3])}/{len(results)}")
     if util.VERBOSE:
