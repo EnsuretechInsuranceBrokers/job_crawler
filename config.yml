@@ -44,7 +44,7 @@ match:
   max_age_days: 60       # ignore postings older than this
 
 apply:
-  dry_run: true          # true: fill forms but never press submit. Flip to false when the report looks right.
+  dry_run: false          # true: fill forms but never press submit. Flip to false when the report looks right.
   max_per_run: 29        # auto-apply attempts per run (daily run -> about 203 a week)
   max_manual_per_run: 10 # tailored "apply yourself" packets per run
   max_per_company: 2     # per run, so one employer is not flooded
