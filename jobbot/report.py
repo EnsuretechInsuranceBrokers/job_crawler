@@ -6,7 +6,7 @@ from email.message import EmailMessage
 
 import pyzipper
 
-LABELS = {"ineligible": "skipped: the form requires you to be somewhere you are not", "needs_answers": "form has questions your profile cannot answer", "captcha": "CAPTCHA",
+LABELS = {"rejected": "the form refused the submission", "ineligible": "skipped: the form requires you to be somewhere you are not", "needs_answers": "form has questions your profile cannot answer", "captcha": "CAPTCHA",
           "verification": "email verification code required", "unconfirmed": "submitted, but no confirmation seen",
           "manual": "site does not support auto-apply", "error": "error"}
 
@@ -50,7 +50,7 @@ def build(results, dry_run, out_dir, asked=None, ai_down=False):
             if apply_url(job):
                 lines.append(f"  - apply: {apply_url(job)}")
             lines.append(f"  - why: {LABELS.get(outcome.status, outcome.status)}"
-                         + (f" ({outcome.detail})" if outcome.status in ("error", "unconfirmed") else ""))
+                         + (f" ({outcome.detail})" if outcome.status in ("error", "unconfirmed", "rejected") else ""))
             if pdf and os.path.exists(os.path.join(os.path.dirname(pdf), "form.png")):
                 lines.append(f"  - screenshot of the form as the bot left it: `{os.path.dirname(os.path.relpath(pdf, out_dir))}/form.png`")
             lines += [f"  - unanswered: {q}" for q in outcome.unanswered]

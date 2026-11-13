@@ -169,7 +169,7 @@ def daily_log(profile, results, dry_run, llm_count, state=None, quota=None, ai_d
     ready = [r for r in results if r[1].status == "dry_run_ok"]
     skipped = [r for r in results if r[1].status == "ineligible"]
     todo = [r for r in results if r[1].status not in ("submitted", "dry_run_ok", "ineligible")]
-    why = {"needs_answers": "unanswered question", "captcha": "captcha", "verification": "email code",
+    why = {"rejected": "form refused it", "needs_answers": "unanswered question", "captcha": "captcha", "verification": "email code",
            "unconfirmed": "check inbox", "manual": "apply on site", "error": "error"}
     lines = [f"jobbot daily log{' (DRY RUN - nothing sent)' if dry_run else ''}",
              f"Submitted: {len(sent)} | Need you: {len(todo)}" + (f" | Ready when live: {len(ready)}" if ready else "")]

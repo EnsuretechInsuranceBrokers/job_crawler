@@ -206,6 +206,25 @@ resume and cover letter. Then either:
 2. **Finish it yourself** – open the link, upload the two PDFs, answer the
    questions, submit.
 
+### Picking up where the bot stopped
+
+A link cannot carry a half-filled form: uploads and answers exist only in the
+browser that typed them. To continue without retyping anything, run this on
+your own computer (once: `pip install -r requirements.txt && playwright install chromium`):
+
+```bash
+JOBBOT_KEY=<your key> python -m jobbot.finish
+```
+
+It fetches the bot's memory and, for each waiting application, opens a real
+browser window, fills the whole form again in a few seconds with a freshly
+tailored resume and cover letter, and hands you the window at the exact point
+the bot could not pass - the emailed security code, the CAPTCHA, or a question
+only you can answer. You do that part and press Submit; the bot records it so
+it is not attempted again. `--only verification,captcha` narrows it to those
+reasons and `--limit 10` to a batch. Do not run it while a scheduled run is in
+progress.
+
 **If the AI stops working** (provider busy, free quota used up, key revoked) the
 bot does not guess and does not stop. Resumes fall back to keyword tailoring,
 cover letters to the template, and every open-ended question is handed to you
@@ -224,7 +243,7 @@ No bot can honestly promise 100% unattended applications:
 
 | Situation | What the bot does |
 |---|---|
-| Form shows a CAPTCHA or asks for an emailed verification code | Stops, puts the job in "Needs you". It never tries to defeat these. |
+| Form shows a CAPTCHA, or emails a code "to confirm you're a human" (Greenhouse does this on every application) | Stops, puts the job in "Needs you". These checks exist to make a person confirm, so the bot does not answer them itself; `python -m jobbot.finish` refills the form and leaves just that step to you. |
 | Required question it cannot answer from your profile | Stops and lists the question under "Teach the bot". Add one regex to `answers:` and that question is automated from then on. |
 | The form itself rules you out ("are you located in the US?") | Skips the job without submitting and lists it as skipped. |
 | Aggregator job that links to some other website | Tailors the resume and gives you the link. |
@@ -309,6 +328,7 @@ python -m jobbot --dry-run          # your profile.yml (git-ignored), never subm
 | `jobbot/apply.py` | label-driven form filler and submitter |
 | `jobbot/cover.py` | cover letters |
 | `jobbot/notify.py` | phone alerts and daily log (Telegram, ntfy, WhatsApp) |
+| `jobbot/finish.py` | reopen stopped applications in your own browser, refilled |
 | `jobbot/seal.py` | encrypt / decrypt the in-repo profile |
 | `jobbot/state.py`, `jobbot/report.py` | encrypted memory, report, email |
 | `.github/workflows/jobbot.yml` | the scheduled run |

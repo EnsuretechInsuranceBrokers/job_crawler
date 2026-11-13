@@ -39,8 +39,8 @@ class State:
         def blocks(v):
             if v["status"] == "error" and v.get("tries", 1) < 2:
                 return False  # errors get one retry on a later run
-            if v["status"] == "needs_answers" and sig and v.get("sig") != sig:
-                return False  # the profile can answer more than when this form stopped: try it again
+            if v["status"] in ("needs_answers", "verification", "rejected") and sig and v.get("sig") != sig:
+                return False  # the bot can do more than when this form stopped (new answers, a fix): try it again
             return not reapply_days or now - v["ts"] < reapply_days * 86400
 
         if job.key in self.jobs:

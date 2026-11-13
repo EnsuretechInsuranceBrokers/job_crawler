@@ -1,0 +1,23 @@
+<!doctype html><html><body>
+<!-- Mimics Ashby: Yes/No answers are a pair of buttons, not inputs. -->
+<div class="ashby-application-form-field-entry"><label class="ashby-application-form-question-title _required_x" for="_systemfield_name">Name</label>
+  <input id="_systemfield_name" type="text"></div>
+<div class="ashby-application-form-field-entry"><label class="ashby-application-form-question-title _required_x" for="_systemfield_email">Email</label>
+  <input id="_systemfield_email" type="email"></div>
+<div class="ashby-application-form-field-entry"><label class="ashby-application-form-question-title _required_x">Resume</label>
+  <input id="_systemfield_resume" type="file" style="display:none"></div>
+<div class="ashby-application-form-field-entry"><label class="ashby-application-form-question-title _required_x">Are you over the age of 18?</label>
+  <div class="_yesno_1"><button type="button" class="_option_y">Yes</button><button type="button" class="_option_n">No</button></div></div>
+<button id="go" class="ashby-application-form-submit-button">Submit Application</button>
+<script>
+  let age = '';
+  document.querySelectorAll('._yesno_1 button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('._yesno_1 button').forEach(x => x.classList.remove('_active_z'));
+    b.classList.add('_active_z'); age = b.textContent; }));
+  document.getElementById('go').addEventListener('click', () => {
+    const v = id => document.getElementById(id).value;
+    if (!age) { document.body.insertAdjacentHTML('beforeend', '<p class="error">Missing entry for required field: Are you over the age of 18?</p>'); return; }
+    document.body.innerHTML = '<h1>Your application was successfully submitted</h1><pre id="data">' +
+      JSON.stringify({ name: v('_systemfield_name'), email: v('_systemfield_email'), age }) + '</pre>';
+  });
+</script></body></html>
