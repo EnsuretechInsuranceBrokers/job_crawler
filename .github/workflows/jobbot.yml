@@ -2,7 +2,10 @@ name: jobbot
 
 on:
   schedule:
-    - cron: "37 3 * * *"   # every day 03:37 UTC (09:07 IST)
+    # Four slots a day (09:07, 13:07, 17:07, 21:07 IST). GitHub can delay or drop a scheduled
+    # run; the runs share one daily quota, so a later slot only does what is still missing
+    # and exits immediately once the day's quota is met.
+    - cron: "37 3,7,11,15 * * *"
   # Preview: a pull request from this repository (never a fork - forks get no secrets)
   # runs the bot in forced dry-run mode on a few jobs, so a change can be seen
   # working, emails included, before it is merged.

@@ -54,7 +54,17 @@ def run(args):
 
     # The quota is a number of COMPLETED applications, not attempts: a form that stops on a
     # question does not count, and the bot moves straight on to the next best job.
-    target = args.limit or int(acfg.get("target_per_run", acfg.get("max_per_run", 29)))
+    daily = int(acfg.get("target_per_day", acfg.get("target_per_run", acfg.get("max_per_run", 29))))
+    # The workflow is scheduled several times a day because GitHub sometimes drops or delays a
+    # scheduled run. Runs share one daily quota: a later run only does what is still missing.
+    today = time.strftime("%Y-%m-%d", time.gmtime(time.time() + 3600 * float(acfg.get("utc_offset_hours", 0))))
+    day = state.meta.get("day") or {}
+    done_today = int(day.get("completed", 0)) if day.get("date") == today else 0
+    counted = not dry and not args.limit            # previews and dry runs do not use up the day
+    target = args.limit or (max(0, daily - done_today) if counted else daily)
+    if counted and target == 0:
+        log(f"today's quota is already met ({done_today} of {daily}); nothing to do")
+        return
     max_attempts = int(target * float(acfg.get("attempt_factor", 3)))
     max_manual = args.limit or int(acfg.get("max_manual_per_run", 10))
     per_company, completed, attempts, n_manual = {}, 0, 0, 0
@@ -137,7 +147,10 @@ def run(args):
     if acfg.get("public_badge", True) and not args.demo:
         report.badge(state, dry, os.path.join(ROOT, ".state", "badge.json"))
     log("results: " + (", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "nothing to do"))
+    if counted:
+        state.meta["day"] = {"date": today, "completed": done_today + completed}
     log(f"quota: {completed} of {target} completed in {attempts} attempts"
+        + (f" (today so far: {done_today + completed} of {daily})" if counted else "")
         + ("" if completed >= target else " - ran out of matching jobs, attempts or time"))
     log(f"resumes tailored by LLM: {sum(1 for r in results if r[3])}/{len(results)}; "
         f"model calls answered: {llm.answered}/{llm.calls}; took {int((time.time() - started) / 60)} min")
@@ -146,7 +159,7 @@ def run(args):
 
     if not args.demo:
         report.encrypt_zip(out_dir, profile["state_key"])
-        if notify.daily_log(profile, results, dry, sum(1 for r in results if r[3]), state, quota=(completed, target, attempts),
+        if notify.daily_log(profile, results, dry, sum(1 for r in results if r[3]), state, quota=(done_today + completed if counted else completed, daily if counted else target, attempts),
                             ai_down=llm.gave_up):
             log("daily log sent to phone")
         state.save()  # dry runs record no jobs, so this only keeps settings such as the Telegram chat
