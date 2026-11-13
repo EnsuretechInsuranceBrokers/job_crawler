@@ -623,3 +623,19 @@ def test_runs_share_one_daily_quota(tmp_path, monkeypatch):
     wf = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "jobbot.yml")))
     assert len(wf[True]["schedule"][0]["cron"].split()[1].split(",")) >= 3
     assert "target_per_day" in load_config()["apply"]
+
+
+def test_finish_lists_what_is_waiting(tmp_path, job):
+    from jobbot import finish
+    s = State(str(tmp_path / "s.enc"), "k")
+    other = Job("lever", "9", "Globex", "Data Engineer", "Pune", "https://jobs.lever.co/globex/0a1b2c3d-0000-4000-8000-000000000000", board="globex")
+    third = Job("ashby", "7", "Hooli", "SRE", "Remote", "u", board="hooli")
+    s.record(job, "verification")
+    s.record(other, "submitted")
+    s.record(third, "captcha")
+    s.jobs[third.key]["ts"] += 50
+    assert [k for k, _ in finish.waiting(s)] == [third.key, job.key]           # newest first, submitted ones excluded
+    assert [k for k, _ in finish.waiting(s, ["verification"])] == [job.key]
+    assert finish.job_from_record(job.key, s.jobs[job.key], {job.key: job}) is job
+    assert finish.job_from_record(job.key, s.jobs[job.key], {}) is None        # posting closed
+    assert "pick up" in finish.__doc__.lower()

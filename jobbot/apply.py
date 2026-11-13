@@ -645,6 +645,19 @@ def _form_errors(page):
     return seen[:4]
 
 
+def fill_form(page, url, job, profile, resume_pdf, cfg, llm=None, cover=None):
+    """Open an application form and fill everything the profile (and the AI) can answer.
+    Nothing is submitted. Returns (filler, questions still open)."""
+    page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    try:
+        page.wait_for_selector("input[type=file], input[type=email], input[name=email]", state="attached", timeout=20000)
+        page.wait_for_load_state("networkidle", timeout=8000)
+    except Exception:  # noqa: BLE001
+        pass
+    filler = FormFiller(page, profile, job, resume_pdf, cfg, llm, cover)
+    return filler, filler.fill()
+
+
 def apply_to(context, job, profile, resume_pdf, cfg, llm=None, dry_run=True, url=None, cover=None, shot=None):
     """Open the job's form, fill it, and submit unless dry_run. Returns an Outcome.
 
@@ -661,14 +674,7 @@ def _apply(context, job, profile, resume_pdf, cfg, llm, dry_run, url, cover, sho
         return Outcome("manual", "site is not auto-appliable")
     page = context.new_page()
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=45000)
-        try:
-            page.wait_for_selector("input[type=file], input[type=email], input[name=email]", state="attached", timeout=20000)
-            page.wait_for_load_state("networkidle", timeout=8000)
-        except Exception:  # noqa: BLE001
-            pass
-        filler = FormFiller(page, profile, job, resume_pdf, cfg, llm, cover)
-        unanswered = filler.fill()
+        filler, unanswered = fill_form(page, url, job, profile, resume_pdf, cfg, llm, cover)
         detail(f"{job.company}: filled {filler.filled} fields, {len(unanswered)} required unanswered")
         if filler.filled < 2:
             return Outcome("error", "application form not found (posting closed or layout changed)")
