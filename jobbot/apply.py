@@ -147,6 +147,25 @@ SCAN_JS = r"""
     const d = describe(inputs[0], g);
     out.push({ jb: options[0].jb, kind: key.startsWith('radio') ? 'radio' : 'checkboxes', label: g ? d.label : '', required: g ? d.required : inputs.some(i => i.required), options, filled: any });
   }
+  // Yes / No rendered as a pair of buttons (Ashby): not inputs, so they need their own pass.
+  const pairs = new Set();
+  for (const b of document.querySelectorAll('button')) {
+    const box = b.parentElement;
+    if (!box || pairs.has(box) || !shown(b) || !/^(yes|no)$/i.test(clean(b.innerText))) continue;
+    const btns = [...box.children].filter(x => x.tagName === 'BUTTON' && /^(yes|no)$/i.test(clean(x.innerText)));
+    if (btns.length !== 2) continue;
+    pairs.add(box);
+    let p = box.parentElement, lab = null;
+    for (let i = 0; i < 4 && p && !lab; i++, p = p.parentElement)
+      lab = [...p.querySelectorAll('label, legend, [class*="title" i], [class*="label" i]')].find(x =>
+        !x.contains(box) && clean(x.innerText) && !x.querySelector('input, select, textarea, button'));
+    const text = lab ? clean(lab.innerText) : '';
+    const on = x => x.getAttribute('aria-pressed') === 'true' || x.getAttribute('aria-checked') === 'true'
+      || /(^|[_\s-])(active|selected|checked)([_\s-]|$)/i.test(String(x.className));
+    out.push({ jb: tag(btns[0]), info: 'button-pair', kind: 'buttons', label: clean(text.replace(/[*\u2731]/g, '')),
+      required: /[*\u2731]/.test(text) || !!(lab && /required/i.test(String(lab.className))),
+      options: btns.map(x => ({ text: clean(x.innerText), jb: tag(x) })), filled: btns.some(on) });
+  }
   return out;
 }
 """
@@ -502,7 +521,9 @@ class FormFiller:
         i = pick_option(answer, f["options"])
         if i is None:
             return False
-        if kind == "select":
+        if kind == "buttons":
+            self.loc(f["options"][i]["jb"]).click(timeout=5000)
+        elif kind == "select":
             self.loc(f["jb"]).select_option(value=f["options"][i]["value"], timeout=5000)
         else:
             self._tick(f["options"][i]["jb"])
@@ -528,7 +549,7 @@ class FormFiller:
                 return True
         if a:
             return False
-        if (f["required"] and self.cfg.get("accept_consent", True) and f["kind"] in ("select", "radio", "checkboxes", "combobox")
+        if (f["required"] and self.cfg.get("accept_consent", True) and f["kind"] in ("select", "radio", "checkboxes", "combobox", "buttons")
                 and POLICY.search(f["label"])):
             return self.put(f, "consent")
         return False
@@ -680,7 +701,7 @@ def _apply(context, job, profile, resume_pdf, cfg, llm, dry_run, url, cover, sho
                 return Outcome("submitted", "confirmation page seen", llm_answers=filler.llm_used)
         errors = _form_errors(page)
         if errors:
-            return Outcome("unconfirmed", "the form did not accept the submission: " + " | ".join(errors),
+            return Outcome("rejected", "the form did not accept the submission: " + " | ".join(errors),
                            llm_answers=filler.llm_used)
         return Outcome("unconfirmed", "submitted but no confirmation seen - check your inbox", llm_answers=filler.llm_used)
     except Exception as e:  # noqa: BLE001 - message may echo typed values, so keep only the type

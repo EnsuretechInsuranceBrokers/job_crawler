@@ -9,6 +9,11 @@ from . import util
 from .util import detail, log
 
 
+# Bump when the form engine learns to get past something it used to stop on, so applications
+# that stopped for that reason are tried again instead of waiting out the re-apply window.
+FORM_ENGINE = 2
+
+
 def run(args):
     from playwright.sync_api import sync_playwright
 
@@ -44,7 +49,8 @@ def run(args):
     def fingerprint():
         # includes whether the AI is answering right now: a form that stopped while the AI was
         # down is tried again on the first run where it is back
-        return hashlib.sha256(json.dumps([profile.get("answers"), llm.enabled], sort_keys=True, default=str).encode()).hexdigest()[:16]
+        return hashlib.sha256(json.dumps([profile.get("answers"), llm.enabled, FORM_ENGINE], sort_keys=True,
+                                         default=str).encode()).hexdigest()[:16]
 
     sig = fingerprint()
     picks = select(crawl(cfg["sources"]), profile, cfg, lambda job: state.seen(job, reapply, sig))
@@ -126,7 +132,8 @@ def run(args):
             if not dry:
                 state.record(job, outcome.status, fingerprint())
                 state.save()  # after every job, so a later crash loses nothing
-                notify.alert(profile, job, outcome, [x for x in (pdf, letter_pdf) if x], state)
+                if acfg.get("alert_each", False):  # off by default: at 30 a day the daily log is enough
+                    notify.alert(profile, job, outcome, [x for x in (pdf, letter_pdf) if x], state)
                 if auto:
                     time.sleep(acfg.get("delay_seconds", 20))
         browser.close()

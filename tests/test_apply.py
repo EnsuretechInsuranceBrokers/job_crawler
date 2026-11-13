@@ -167,5 +167,15 @@ def test_rejected_submit_reports_why_and_keeps_screenshot(browser, profile, job,
     finally:
         apply_mod.time.time = real_sleepless
         ctx.close()
-    assert outcome.status == "unconfirmed" and "Location is required" in outcome.detail
+    assert outcome.status == "rejected" and "Location is required" in outcome.detail
     assert open(shot, "rb").read(4) == b"\x89PNG"
+
+
+def test_ashby_yes_no_buttons(browser, profile, job, pdf):
+    # without an answer the question is seen and reported, not silently skipped
+    outcome, data = run(browser, "ashby_like.html", profile, job, pdf)
+    assert outcome.status == "needs_answers" and outcome.unanswered == ["Are you over the age of 18?"] and data is None
+    profile["answers"]["over the age of 18"] = "Yes"
+    outcome, data = run(browser, "ashby_like.html", profile, job, pdf)
+    assert outcome.status == "submitted", outcome
+    assert data == {"name": "Jane Doe", "email": "jane.doe@example.com", "age": "Yes"}
