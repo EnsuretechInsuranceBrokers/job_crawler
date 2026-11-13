@@ -595,3 +595,31 @@ def test_ai_outage_falls_back_to_manual_input(monkeypatch, tmp_path, profile, jo
     s = State(str(tmp_path / "s.enc"), "k")
     s.record(job, "needs_answers", "answers+ai-off")
     assert not s.seen(job, 7, "answers+ai-on")
+
+
+def test_runs_share_one_daily_quota(tmp_path, monkeypatch):
+    """A second run on the same day only does what the first left; the next day starts fresh."""
+    import time as _time
+    s = State(str(tmp_path / "s.enc"), "k")
+
+    def remaining(now, daily=29, offset=5.5):
+        today = _time.strftime("%Y-%m-%d", _time.gmtime(now + 3600 * offset))
+        day = s.meta.get("day") or {}
+        done = int(day.get("completed", 0)) if day.get("date") == today else 0
+        return today, done, max(0, daily - done)
+
+    t0 = 1794800000                                  # some morning
+    today, done, left = remaining(t0)
+    assert (done, left) == (0, 29)
+    s.meta["day"] = {"date": today, "completed": 20}
+    s.save()
+    s = State(str(tmp_path / "s.enc"), "k")          # a later run the same day reloads the state
+    assert remaining(t0 + 4 * 3600)[1:] == (20, 9)
+    s.meta["day"] = {"date": today, "completed": 29}
+    assert remaining(t0 + 8 * 3600)[2] == 0          # quota met: the next slot has nothing to do
+    assert remaining(t0 + 30 * 3600)[1:] == (0, 29)  # next day
+    import yaml
+    from jobbot.config import ROOT, load_config
+    wf = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "jobbot.yml")))
+    assert len(wf[True]["schedule"][0]["cron"].split()[1].split(",")) >= 3
+    assert "target_per_day" in load_config()["apply"]

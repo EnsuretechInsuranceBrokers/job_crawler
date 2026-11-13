@@ -190,7 +190,7 @@ def daily_log(profile, results, dry_run, llm_count, state=None, quota=None, ai_d
         lines += ["", "AI unavailable for part of this run: open-ended questions were left for your input "
                       "and will be retried automatically once it is back."]
     if quota:
-        lines += ["", f"Quota: {quota[0]} of {quota[1]} completed in {quota[2]} attempts"]
+        lines += ["", f"Quota: {quota[0]} of {quota[1]} completed today ({quota[2]} attempts this run)"]
     lines += ["", f"Resumes tailored by AI: {llm_count}/{len(results)}"]
     counts = {}
     for _, o, *_ in todo:
@@ -199,7 +199,7 @@ def daily_log(profile, results, dry_run, llm_count, state=None, quota=None, ai_d
               + (f" ({', '.join(f'{v} {k}' for k, v in sorted(counts.items()))})" if counts else "")
               + (f", ready when live {len(ready)}" if ready else "")
               + (f", skipped as not eligible {len(skipped)}" if skipped else "") + "."
-              + (f" Quota: {quota[0]} of {quota[1]} completed in {quota[2]} attempts." if quota else "")
+              + (f" Quota: {quota[0]} of {quota[1]} completed today ({quota[2]} attempts this run)." if quota else "")
               + (" **The AI was unavailable for part of this run**, so open-ended questions were left for your "
                  "input; those forms retry automatically once it is back." if ai_down else "")
               + (f" Submitted in the last 7 days: {_week_total(state)}." if state is not None and not dry_run else ""))

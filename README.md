@@ -134,7 +134,7 @@ button. To let it submit:
 1. Read one dry-run report first. `dashboard.html` shows what it would have sent
    and to whom; open two or three of the tailored PDFs.
 2. Set `apply.dry_run: false` in `config.yml` and commit.
-3. For the first live days consider `target_per_run: 5`, then raise it. The
+3. For the first live days consider `target_per_day: 5`, then raise it. The
    default of 29 completed applications a day is about 203 a week.
 
 Things worth knowing before you do:
@@ -164,7 +164,7 @@ Things worth knowing before you do:
 | "LLM disabled for this run" in the log | The AI key is wrong or the free quota is used up. The run continues with keyword tailoring; essay questions wait for you. |
 | "source skipped - .../name: HTTPError 404" | That company no longer has a board under that name. Remove it from `config.yml` (harmless if left). |
 | Few or no matches | Loosen `search.titles` / `exclude_titles`, raise `max_required_years` or `match.max_age_days`, add companies to `config.yml`. |
-| The schedule stopped | GitHub pauses schedules in inactive repositories; the workflow re-enables itself on each run, and a manual run restarts it. |
+| A scheduled run did not happen | GitHub delays or drops scheduled runs; the next of the day's four slots picks up the same quota, and "Run workflow" in the Actions tab starts one immediately. |
 
 ## What is in the report
 
@@ -186,9 +186,12 @@ Each run uploads `jobbot-report` (an AES-encrypted zip; the password is your
 The bot never waits. A form that stops (unanswered question, CAPTCHA,
 verification code) is recorded with everything needed to finish it, and the bot
 moves straight on to the next job. Stopped forms do not count towards the daily
-quota: `target_per_run` is a number of **completed** applications, and the bot
+quota: `target_per_day` is a number of **completed** applications, and the bot
 keeps going down the list until it reaches it, runs out of matching jobs, or has
-made `attempt_factor` times as many attempts.
+made `attempt_factor` times as many attempts. The workflow is scheduled four
+times a day because GitHub sometimes delays or drops a scheduled run; the runs
+share the one daily quota, so a later run only does what is still missing and
+exits at once when the day is already done.
 
 To see and finish the stopped ones, open the run's report (`report.md` or
 `dashboard.html` inside the `jobbot-report` artifact; the zip password is the
@@ -255,7 +258,7 @@ $0. Actions minutes are free for public repositories and all job sources are
 free public APIs. The AI is optional and uses a free-tier key you supply; if its
 quota runs out mid-run the bot carries on with keyword tailoring. Use is still
 subject to GitHub's Actions terms and each site's terms; the pace is deliberate
-(`target_per_run`, `max_per_company`, `delay_seconds`).
+(`target_per_day`, `max_per_company`, `delay_seconds`).
 
 ### Optional: AI tailoring (one free API key)
 

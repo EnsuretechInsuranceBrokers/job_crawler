@@ -45,9 +45,11 @@ match:
 
 apply:
   dry_run: false          # true: fill forms but never press submit. Flip to false when the report looks right.
-  max_per_run: 29        # auto-apply attempts per run (daily run -> about 203 a week)
-  max_manual_per_run: 10 # tailored "apply yourself" packets per run
-  max_per_company: 2     # per run, so one employer is not flooded
+  target_per_day: 30     # COMPLETED applications to reach each day (about 203 a week); shared by all of the day's runs
+  attempt_factor: 3      # try up to this many times the remaining target per run before giving up
+  utc_offset_hours: 5.5  # your timezone, so "a day" starts at your midnight (5.5 = India)
+  max_manual_per_run: 30 # tailored "apply yourself" packets per run
+  max_per_company: 5     # per run, so one employer is not flooded
   reapply_after_days: 7  # a still-open job may be applied to again after this many days; 0 = never twice
   skip_if_ineligible: true  # do not submit when a required "are you located in ...?" must truthfully be answered no
   accept_consent: true   # tick required privacy/consent checkboxes
