@@ -712,7 +712,9 @@ def test_more_built_in_answers(profile, tmp_path, job):
     assert rule_answer("End date month", profile)[0] == "May"
     months = [{"text": m} for m in ("January", "May", "August")]
     assert pick_option(rule_answer("End date month", profile)[0], months) == 1
-    assert rule_answer("State/Province", profile) is None
+    assert rule_answer("State/Province", profile) == "Texas"         # from the example profile
+    del profile["state"]
+    assert rule_answer("State/Province", profile) is None            # never guessed when the profile has none
     profile["state"] = "Texas"
     assert rule_answer("State/Province", profile) == "Texas" and rule_answer("State", profile) == "Texas"
     wordy = "Please enter your preferred Last Name/Surname (only enter your preferred Last Name/Surname)"
