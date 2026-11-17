@@ -31,6 +31,14 @@ def greeting(job):
 
 def cover_letter(profile, tailored, job, llm=None):
     """Returns (text, written_by_llm)."""
+    def acceptable(text):
+        text = text.strip().strip("`").strip()
+        ok = 500 <= len(text) <= 2200 and "[" not in text and profile["name"] in text
+        return text if ok and grounded(text, profile, job, max_len=2200, letter=True) else None
+
+    drafted = tailored.pop("_cover_letter", None)  # came with the tailoring reply: no second call needed
+    if drafted:
+        return (acceptable(drafted), True) if acceptable(drafted) else (template(tailored, job), False)
     if llm is not None and llm.enabled:
         import json
         facts = {k: tailored.get(k) for k in ("name", "summary", "skills", "experience", "projects", "education")}

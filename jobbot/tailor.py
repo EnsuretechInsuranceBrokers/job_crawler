@@ -16,7 +16,8 @@ SYSTEM = """You tailor a resume to a job posting. You must never invent or alter
 Return JSON with exactly these keys:
  "skills": the candidate's skills reordered most relevant first (only skills from the given list, same spelling; drop clearly irrelevant ones, keep at least 8 if available)
  "bullets": object mapping each experience index (string) to a list of that experience's bullet indices, most relevant first, at most 5
- "summary": 2 sentences, first person implied, built ONLY from facts in the candidate summary, skills and bullets, emphasising what matters for this job. Do not name the hiring company. Do not claim skills, titles, or years that are not in the profile."""
+ "summary": 2 sentences, first person implied, built ONLY from facts in the candidate summary, skills and bullets, emphasising what matters for this job. Do not name the hiring company. Do not claim skills, titles, or years that are not in the profile.
+ "cover_letter": a cover letter of 150-220 words in three short paragraphs, plain text with a blank line between paragraphs, no placeholders or brackets, no address block or date. Use ONLY facts from the candidate; connect two or three real achievements to what the posting asks for. Start with the given GREETING line and end with "Sincerely," and the candidate's name on the next line."""
 
 
 def _overlap(text, job_norm, terms):
@@ -72,14 +73,23 @@ def tailor(profile, job, llm=None):
                 "experience": [{"index": i, "title": e.get("title"),
                                 "bullets": dict(enumerate(e.get("bullets") or []))}
                                for i, e in enumerate(profile["experience"])]}
-        reply = llm.ask(SYSTEM, f"JOB TITLE: {job.title}\nJOB POSTING:\n{job.description[:6000]}\n\n"
+        slim["name"] = profile.get("name")
+        slim["projects"] = [{"name": p.get("name"), "about": p.get("tagline"), "bullets": p.get("bullets")}
+                            for p in profile.get("projects") or []]
+        greeting = f"Dear {job.company} hiring team," if job.named else "Dear hiring team,"
+        reply = llm.ask(SYSTEM, f"JOB TITLE: {job.title}\nGREETING: {greeting}\nJOB POSTING:\n{job.description[:6000]}\n\n"
                                 f"CANDIDATE:\n{json.dumps(slim)}", as_json=True)
         if isinstance(reply, dict):
             used_llm = _merge(plan, reply, profile, job)
+            letter = reply.get("cover_letter")
+            if isinstance(letter, str):
+                plan["cover_letter"] = letter.strip()
 
     out = copy.deepcopy(profile)
     out["skills"] = plan["skills"]
     out["summary"] = plan["summary"]
+    if plan.get("cover_letter"):
+        out["_cover_letter"] = plan["cover_letter"]  # written in the same model call; checked in cover.py
     for i, exp in enumerate(out["experience"]):
         bl = exp.get("bullets") or []
         exp["bullets"] = [bl[k] for k in plan["bullets"][str(i)]]

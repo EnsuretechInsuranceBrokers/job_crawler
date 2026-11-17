@@ -582,7 +582,13 @@ def test_ai_outage_falls_back_to_manual_input(monkeypatch, tmp_path, profile, jo
     assert not used and out["skills"] and not bot.gave_up
     for _ in range(3):
         bot.ask("s", "u")
-    assert bot.gave_up and not bot.enabled and bot.ask("s", "u") is None
+    assert bot.gave_up and bot.ask("s", "u") is None            # paused: no more calls for now
+    calls_while_paused = bot.calls
+    bot.ask("s", "u")
+    assert bot.calls == calls_while_paused
+    bot.paused_until = 0                                         # the pause is over: it tries again
+    bot.ask("s", "u")
+    assert bot.calls == calls_while_paused + 1 and bot.enabled
     results = [(job, Outcome("needs_answers", unanswered=["Why us?"]), None, False)]
     text = report.build(results, False, str(tmp_path), {}, ai_down=True)
     assert "The AI stopped answering" in text and "Why us?" in text
@@ -639,3 +645,62 @@ def test_finish_lists_what_is_waiting(tmp_path, job):
     assert finish.job_from_record(job.key, s.jobs[job.key], {job.key: job}) is job
     assert finish.job_from_record(job.key, s.jobs[job.key], {}) is None        # posting closed
     assert "pick up" in finish.__doc__.lower()
+
+
+def test_one_model_call_covers_resume_and_letter(profile, job):
+    from jobbot.cover import cover_letter
+    body = ("I have spent six years building Python services on AWS, including a payment reconciliation pipeline "
+            "with Kafka that cut settlement delays dramatically. " * 3)
+    letter = f"Dear Initech hiring team,\n\n{body}\n\nThe Senior Backend Engineer role fits that work.\n\nSincerely,\nJane Doe"
+
+    class Once:
+        enabled, calls = True, 0
+
+        def ask(self, system, user, as_json=False):
+            Once.calls += 1
+            assert "GREETING: Dear Initech hiring team," in user and "cover_letter" in system
+            return {"skills": ["Python", "Kafka", "Go", "AWS", "Docker", "Redis"], "bullets": {"0": [0, 1], "1": [0]},
+                    "summary": "Backend engineer with 6 years of experience building Python and Kafka services on AWS.",
+                    "cover_letter": letter}
+
+    tailored, used = tailor(profile, job, Once())
+    text, by_llm = cover_letter(profile, tailored, job, Once())
+    assert used and by_llm and text == letter and Once.calls == 1      # the letter cost no second call
+    assert "_cover_letter" not in tailored
+    # a letter that invents a skill is dropped in favour of the template, still without another call
+    tailored, _ = tailor(profile, job, Once())
+    tailored["_cover_letter"] = letter.replace("Python services", "Rust and Elixir services")
+    text, by_llm = cover_letter(profile, tailored, job, Once())
+    assert not by_llm and text.startswith("Dear Initech hiring team,") and Once.calls == 2
+
+
+def test_backup_ai_provider(monkeypatch):
+    from jobbot import llm as llm_mod
+    hits = []
+
+    class Resp:
+        def __init__(self, status, payload=None):
+            self.status_code, self.payload, self.headers, self.text = status, payload or {}, {}, ""
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise llm_mod.requests.HTTPError("x")
+
+        def json(self):
+            return self.payload
+
+    def post(url, **kw):
+        hits.append(url.split("/")[2])
+        if "openrouter" in url:
+            return Resp(429)
+        return Resp(200, {"choices": [{"message": {"content": "hello"}}]})
+
+    monkeypatch.setattr(llm_mod.requests, "post", post)
+    monkeypatch.setattr(llm_mod.requests, "get", lambda url, **kw: Resp(200, {"data": []}))
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda s: None)
+    profile = {"llm": [{"provider": "openrouter", "api_key": "a"}, {"provider": "groq", "api_key": "b"}]}
+    bot = llm_mod.make_llm({"enabled": True}, profile)
+    assert isinstance(bot, llm_mod.Chain) and bot.enabled
+    assert bot.ask("s", "u") == "hello" and "api.groq.com" in hits       # first provider is out, second answers
+    assert not bot.gave_up and bot.answered == 1
+    assert isinstance(llm_mod.make_llm({}, {"llm": {"provider": "groq", "api_key": "b"}}), llm_mod.LLM)

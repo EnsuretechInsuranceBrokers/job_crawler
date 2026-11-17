@@ -21,7 +21,7 @@ def run(args):
     from .cover import cover_letter
     from .apply import apply_to, apply_url
     from .config import ROOT, load_config, load_profile
-    from .llm import LLM
+    from .llm import make_llm
     from .match import select
     from .models import Outcome
     from .render import render_letter_pdf, render_pdf
@@ -37,7 +37,7 @@ def run(args):
     os.makedirs(out_dir, exist_ok=True)
     state = State(os.path.join(ROOT, ".state", "demo.enc" if args.demo else "state.enc"), profile["state_key"])
     acfg["memory"] = state.meta.setdefault("answers", {})   # remembered multiple-choice answers
-    llm = LLM(cfg["llm"], profile)
+    llm = make_llm(cfg["llm"], profile)
     log(f"mode: {'DRY RUN' if dry else 'LIVE'}{' (demo profile)' if args.demo else ''}; "
         f"llm: {'on' if llm.enabled else 'off'}; remembered jobs: {len(state.jobs)}")
 
@@ -104,11 +104,14 @@ def run(args):
             detail(f"[{n}] {job.title} @ {job.company} ({job.source}, score {job.score})")
             pdf, letter_pdf, used_llm = None, None, False
             try:
-                tailored, used_llm = tailor(profile, job, llm)
+                # "Apply yourself" packets use keyword tailoring unless asked otherwise: the free AI
+                # quota is small and is better spent on forms the bot can actually complete.
+                ai = llm if auto or acfg.get("ai_for_manual", False) else None
+                tailored, used_llm = tailor(profile, job, ai)
                 job_dir = os.path.join(out_dir, f"{n:02d}_" + re.sub(r"\W+", "_", job.company)[:30])
                 os.makedirs(job_dir, exist_ok=True)
                 pdf = render_pdf(browser, tailored, os.path.join(job_dir, file_name))
-                letter, _ = cover_letter(profile, tailored, job, llm)
+                letter, _ = cover_letter(profile, tailored, job, ai)
                 with open(os.path.join(job_dir, "cover_letter.txt"), "w") as f:
                     f.write(letter)
                 if auto and not dry:

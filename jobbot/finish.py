@@ -79,7 +79,7 @@ def main(argv=None):
     from .apply import CONFIRM, apply_url, fill_form
     from .config import load_config, load_profile
     from .cover import cover_letter
-    from .llm import LLM
+    from .llm import make_llm
     from .render import render_letter_pdf, render_pdf
     from .sources import crawl
     from .state import State
@@ -98,7 +98,7 @@ def main(argv=None):
         return 0
     print(f"{len(rows)} application(s) waiting. Checking which postings are still open...")
     live = {j.key: j for j in crawl(cfg["sources"])}
-    llm = LLM(cfg["llm"], profile)
+    llm = make_llm(cfg["llm"], profile)
     acfg = dict(cfg["apply"], llm_answer_questions=cfg["llm"].get("answer_questions", True),
                 memory=state.meta.setdefault("answers", {}))
     out_dir = os.path.join(ROOT, "out", "finish")
