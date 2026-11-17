@@ -292,7 +292,23 @@ llm:
 ```
 
 to your profile and re-seal it. The bot asks the provider which models exist and
-picks one, so there is no model name to keep up to date. With a model, resumes
+picks one, so there is no model name to keep up to date.
+
+Free tiers are small, so the bot is frugal: one model call covers a job's resume
+and cover letter, "apply yourself" packets use keyword tailoring
+(`ai_for_manual: false`), and a busy or rate-limited provider is paused for a few
+minutes and tried again later in the run. To add headroom, list more than one
+provider; the next is used whenever the first cannot answer:
+
+```yaml
+llm:
+  - {provider: gemini, api_key: "..."}
+  - {provider: groq, api_key: "..."}
+  - {provider: openrouter, api_key: "..."}
+```
+
+OpenRouter's free models allow only a few dozen requests a day, which a full
+run exhausts quickly; it works better as a backup than as the only provider. With a model, resumes
 and cover letters read better and the bot can answer open-ended questions
 ("Why do you want to work here?") from your real experience – the main reason
 forms otherwise stop for manual input. Your resume text is sent to that provider.

@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 KEEP_DAYS = 240
+MAX_RETRIES = 3  # how often one stopped form is tried again before it waits for the re-apply window
 
 
 def _fernet(passphrase):
@@ -39,7 +40,8 @@ class State:
         def blocks(v):
             if v["status"] == "error" and v.get("tries", 1) < 2:
                 return False  # errors get one retry on a later run
-            if v["status"] in ("needs_answers", "verification", "rejected") and sig and v.get("sig") != sig:
+            if (v["status"] in ("needs_answers", "verification", "rejected") and sig and v.get("sig") != sig
+                    and v.get("tries", 1) < MAX_RETRIES):
                 return False  # the bot can do more than when this form stopped (new answers, a fix): try it again
             return not reapply_days or now - v["ts"] < reapply_days * 86400
 

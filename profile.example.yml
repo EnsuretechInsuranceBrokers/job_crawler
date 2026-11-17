@@ -9,6 +9,7 @@ name: Jane Doe
 email: jane.doe@example.com
 phone: "+1 555 010 0199"
 location: "Austin, TX, United States"
+state: Texas              # answers "State/Province" questions
 links:
   linkedin: https://www.linkedin.com/in/janedoe-example
   github: https://github.com/janedoe-example

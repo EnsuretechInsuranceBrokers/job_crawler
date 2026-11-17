@@ -704,3 +704,28 @@ def test_backup_ai_provider(monkeypatch):
     assert bot.ask("s", "u") == "hello" and "api.groq.com" in hits       # first provider is out, second answers
     assert not bot.gave_up and bot.answered == 1
     assert isinstance(llm_mod.make_llm({}, {"llm": {"provider": "groq", "api_key": "b"}}), llm_mod.LLM)
+
+
+def test_more_built_in_answers(profile, tmp_path, job):
+    profile["education"][0]["year"] = "Aug 2021 - May 2025"
+    assert rule_answer("Start date month", profile) == ["August", "Aug", "8", "08"]
+    assert rule_answer("End date month", profile)[0] == "May"
+    months = [{"text": m} for m in ("January", "May", "August")]
+    assert pick_option(rule_answer("End date month", profile)[0], months) == 1
+    assert rule_answer("State/Province", profile) is None
+    profile["state"] = "Texas"
+    assert rule_answer("State/Province", profile) == "Texas" and rule_answer("State", profile) == "Texas"
+    wordy = "Please enter your preferred Last Name/Surname (only enter your preferred Last Name/Surname)"
+    assert len(wordy) > 70 and rule_answer(wordy, profile) == "Doe"
+    assert rule_answer("x" * 80 + " current company", profile) is None          # other built-ins stay strict
+    eeo = [{"text": "Asian"}, {"text": "White"}, {"text": "I choose not to disclose"}]
+    assert pick_option("decline", eeo) == 2
+    notice = [{"text": t} for t in ("Immediate", "15 days", "30 days", "60 days", "90 days")]
+    assert pick_option("2 weeks", notice) == 1 and pick_option("5 weeks", notice) == 3
+    assert pick_option("3", [{"text": "1"}, {"text": "2"}, {"text": "5"}]) is None   # a plain number is never rounded up
+    # a stopped form is retried when the bot can do more, but not endlessly
+    s = State(str(tmp_path / "s.enc"), "k")
+    for n in range(3):
+        assert not s.seen(job, 7, f"sig-{n + 1}")
+        s.record(job, "needs_answers", f"sig-{n}")
+    assert s.seen(job, 7, "sig-other")

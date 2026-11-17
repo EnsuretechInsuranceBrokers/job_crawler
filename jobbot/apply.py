@@ -17,7 +17,8 @@ CONFIRM = re.compile(r"thank you|thanks for applying|application (has been|was) 
                      r"(we('ve| have)|i've) received your application|successfully (submitted|applied)|"
                      r"application submitted|application received", re.I)
 VERIFY = re.compile(r"(verification|security) code|verify your email|enter the code", re.I)
-DECLINE = re.compile(r"decline|prefer not|rather not|don'?t wish|do not wish|not (wish|want) to", re.I)
+DECLINE = re.compile(r"decline|prefer not|rather not|don'?t wish|do not wish|not (wish|want) to|"
+                     r"(choose|chose|opt) not to|not to (disclose|say|answer|specify|identify)|no answer|undisclosed", re.I)
 CONSENT = re.compile(r"agree|consent|acknowledge|privacy|confirm|certify|understand|terms", re.I)
 POLICY = re.compile(r"privacy (policy|notice|statement)|terms (of|and)|data (processing|protection)|gdpr|\"?i agree", re.I)
 CAPTCHA_SEL = ('iframe[src*="recaptcha/api2/bframe"], iframe[src*="recaptcha/enterprise/bframe"], '
@@ -220,6 +221,7 @@ BUILTIN = [  # (regex on short label, profile -> answer); first match wins
 
     (r"zip|postal code|post code|pin ?code", lambda p: (re.findall(r"\b\d{5,6}\b", str(p.get("address", ""))) or [None])[-1]),
     (r"^(home |current |mailing |postal |permanent |residential )?address", lambda p: p.get("address") or p.get("location")),
+    (r"^state\b|^province|state ?/ ?province|^region$", lambda p: p.get("state")),
     (r"^country|country of residence|country.{0,40}(live|reside|based|located)|which country", lambda p: p.get("country") or (p.get("location") or "").split(",")[-1].strip()),
     (r"^(current |your |present )?(job |work )?(location|city)|where are you (currently )?(based|located|living)|city.*(live|reside)",
      lambda p: p.get("location")),
@@ -228,10 +230,29 @@ BUILTIN = [  # (regex on short label, profile -> answer); first match wins
 
 # Structured fields that must win over the user's free-form patterns
 # ("Start date year" is an education year, not "when can you start").
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+          "November", "December"]
+
+
+def _month(p, which):
+    """Month of the first (which=0) or last (which=-1) date in the education 'year' text, e.g.
+    "Aug 2021 - Aug 2025" -> ["August", "Aug", "8", "08"] (several spellings: sites differ)."""
+    found = re.findall(r"\b(" + "|".join(m[:3] for m in MONTHS) + r")[a-z]*\b", str(_edu(p).get("year", "")), re.I)
+    if not found:
+        return None
+    n = [m[:3].lower() for m in MONTHS].index(found[which][:3].lower()) + 1
+    return [MONTHS[n - 1], MONTHS[n - 1][:3], str(n), f"{n:02d}"]
+
+
 STRUCTURED = [
     (r"^start (date )?year", lambda p: _year(p, 0)),
     (r"^end (date )?year|graduation year|year of graduation", lambda p: _year(p, -1)),
+    (r"^start (date )?month", lambda p: _month(p, 0)),
+    (r"^end (date )?month|graduation month", lambda p: _month(p, -1)),
 ]
+
+
+IDENTITY = 6  # the first six built-ins: first / last / preferred / full name, email, phone
 
 
 def rule_answer(label, profile, job=None):
@@ -243,6 +264,8 @@ def rule_answer(label, profile, job=None):
     for pattern, fn in STRUCTURED:
         if re.search(pattern, label, re.I):
             value = fn(profile)
+            if isinstance(value, list):
+                return value
             return str(value) if value else None
     for pattern, answer in (profile.get("answers") or {}).items():
         try:
@@ -261,8 +284,10 @@ def rule_answer(label, profile, job=None):
                 return None
         # a list means "try these in order" - useful when sites word their options differently
         return [str(x) for x in answer] if isinstance(answer, list) else str(answer)
-    if len(label) <= 70:
-        for pattern, fn in BUILTIN:
+    for n, (pattern, fn) in enumerate(BUILTIN):
+        # Name, email and phone questions can be wordy ("Please enter your preferred Last Name/Surname
+        # (only enter ...)"); the other built-ins only apply to short labels, where they cannot misfire.
+        if len(label) <= (140 if n < IDENTITY else 70):
             if re.search(pattern, label, re.I):
                 value = fn(profile)
                 if isinstance(value, list):
@@ -333,15 +358,21 @@ def pick_option(answer, options):
     if a in SYNONYMS and a not in texts and SYNONYMS[a] in texts:
         a = SYNONYMS[a]
     try:
-        number = float(a)
+        number, converted = float(a), False
     except ValueError:
-        number = _duration(a, " ".join(texts))
+        number, converted = _duration(a, " ".join(texts)), True
     tests = (lambda t: t == a,
              lambda t: t.startswith(a + " ") or a.startswith(t + " "),
              lambda t: re.search(r"(?<![a-z0-9])" + re.escape(a) + r"(?![a-z0-9])", t) is not None)
     for n, test in enumerate(tests):
         if n == 2 and number is not None:  # "2" must mean the range holding 2, not any option containing a 2
-            return _range_pick(number, options)
+            hit = _range_pick(number, options)
+            if hit is None and converted:
+                # "2 weeks" against "15 days / 30 days / 60 days": the shortest period that covers it
+                single = [(float(m.group(1)), i) for i, t in enumerate(texts)
+                          for m in [re.fullmatch(r"(\d+(?:\.\d+)?) ?[a-z]*", t)] if m]
+                hit = min((v, i) for v, i in single if v >= number)[1] if any(v >= number for v, _ in single) else None
+            return hit
         hits = [i for i, t in enumerate(texts) if t and test(t)]
         if len(hits) == 1 or (hits and n == 0):
             return hits[0]
