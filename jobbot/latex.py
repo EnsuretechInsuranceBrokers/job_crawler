@@ -1,10 +1,9 @@
 """The resume as the user's own LaTeX, tailored only by bolding what the job asks for.
 
 The source lives in the encrypted profile (`resume_tex`). For each job:
-- between the `% JOBBOT-SKILLS-BEGIN/END` markers, the user's own bolding is removed and the skills
-  this posting mentions are bolded instead;
-- in experience and project bullets, the user's emphasis stays and technologies the posting
-  mentions are bolded as well.
+- between the `% JOBBOT-SKILLS-BEGIN/END` markers, skills this posting mentions are bolded;
+- in experience and project bullets, technologies the posting mentions are bolded.
+The user's own bolding always stays: tailoring only ever adds \textbf.
 Nothing is added, removed or reworded. If the tailored version runs past one page, the
 untailored source is used; if LaTeX is not installed or fails, the caller falls back to HTML.
 """
@@ -48,11 +47,11 @@ def _wanted(item, job_text):
 
 
 def _split_top(s):
-    """Split a skills list on commas that are not inside parentheses."""
+    """Split a skills list on commas outside parentheses and braces (a \\textbf{a, b} group stays whole)."""
     out, depth, cur = [], 0, ""
     for ch in s:
-        depth += ch == "("
-        depth -= ch == ")"
+        depth += ch in "({"
+        depth -= ch in ")}"
         if ch == "," and depth == 0:
             out.append(cur)
             cur = ""
@@ -63,13 +62,13 @@ def _split_top(s):
 
 def _bold_skills(block, job_text, hits):
     def line(m):
-        label, items = m.group(1), TEXTBF.sub(r"\1", m.group(2))
+        label, items = m.group(1), m.group(2)
         parts = _split_top(items)
         out = []
         for p in parts:
             lead = p[:len(p) - len(p.lstrip())]
             core = p.strip()
-            if core and _wanted(core, job_text):
+            if core and not core.startswith("\\textbf{") and _wanted(core, job_text):
                 hits.append(core)
                 out.append(f"{lead}\\textbf{{{core}}}")
             else:

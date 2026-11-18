@@ -794,7 +794,8 @@ def test_latex_bolds_only_what_the_job_asks_for(profile):
     profile["skills"] = ["Go", "Redis", "Kafka", "PHP"]
     out, hits = tailor_tex(TEX, job, profile)
     skills = out.split("% JOBBOT-SKILLS-BEGIN")[1].split("% JOBBOT-SKILLS-END")[0]
-    assert "PHP, Python" in skills and r"\textbf{PHP" not in skills          # the generic emphasis is replaced
+    assert r"\textbf{PHP, Python}," in skills and r"\textbf{MySQL}," in skills  # the user's own bold always stays
+    assert r"\textbf{\textbf" not in out
     assert r"\textbf{Go}" in skills and r"\textbf{Postgres}" in skills and r"\textbf{Redis}" in skills
     assert r"\textbf{AWS (EC2, S3)}" in skills and r"Q\#" in skills
     bullet = [l for l in out.splitlines() if r"\item" in l][0]
