@@ -760,3 +760,20 @@ def _apply(context, job, profile, resume_pdf, cfg, llm, dry_run, url, cover, sho
             except Exception:  # noqa: BLE001
                 pass
         page.close()
+
+
+def label_key(label):
+    """How a question is remembered: its label with whitespace collapsed and a trailing '*' dropped."""
+    return re.sub(r"\s+", " ", (label or "")).strip().rstrip("*").strip()[:300]
+
+
+def with_learned(profile, learned):
+    """The profile plus answers the user typed once for an exact question (state.meta["learned"]).
+    The user's own `answers:` patterns come first and always win."""
+    if not learned:
+        return profile
+    answers = dict(profile.get("answers") or {})
+    for label, value in learned.items():
+        pattern = r"^\s*" + re.escape(label) + r"\s*\*?\s*$"
+        answers.setdefault(pattern, value)
+    return dict(profile, answers=answers)

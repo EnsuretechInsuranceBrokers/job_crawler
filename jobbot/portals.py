@@ -132,8 +132,9 @@ def internshala_listings(page, title, kind):
 class Answerer:
     """Answers one question: profile rules -> salary estimate -> remembered reply -> ask the person."""
 
-    def __init__(self, profile, job, llm, memory, salary_cache, ask=input):
-        self.profile, self.job, self.llm, self.memory, self.cache, self.ask = profile, job, llm, memory, salary_cache, ask
+    def __init__(self, profile, job, llm, memory, salary_cache, ask=None):
+        self.profile, self.job, self.llm, self.memory, self.cache = profile, job, llm, memory, salary_cache
+        self.ask = ask or (lambda prompt: input(prompt))
 
     def candidates(self, question, kind="text"):
         from .apply import rule_answer
@@ -143,7 +144,8 @@ class Answerer:
             if is_expected_salary(question):
                 a = answers_for(estimate(self.job, self.profile, self.llm, self.cache), question, kind) or None
         if a is None:
-            a = self.memory.get(_key(question))
+            from .apply import label_key
+            a = self.memory.get(label_key(question))
         return [a] if isinstance(a, str) else list(a or [])
 
     def human(self, question, options=()):
@@ -154,12 +156,9 @@ class Answerer:
         if reply.isdigit() and options and 1 <= int(reply) <= len(options):
             reply = options[int(reply) - 1]
         if reply:
-            self.memory[_key(question)] = reply
+            from .apply import label_key
+            self.memory[label_key(question)] = reply
         return reply
-
-
-def _key(question):
-    return re.sub(r"[^a-z0-9 ]+", "", question.lower()).strip()[:160]
 
 
 def choose(answers, options):
@@ -315,10 +314,12 @@ def main(argv=None):
         print("Could not fetch the bot's memory; continuing with a local copy (it will not be published).")
         args.no_sync = True
     state = State(STATE, profile["state_key"])
-    memory = state.meta.setdefault("answers", {})
+    from .apply import with_learned
+    memory = state.meta.setdefault("learned", {})        # answers you type once; the scheduled bot uses them too
+    profile = with_learned(profile, memory)
     cache = cfg.setdefault("salary_cache", {})
     llm = make_llm(cfg["llm"], profile)
-    acfg = dict(cfg["apply"], llm_answer_questions=cfg["llm"].get("answer_questions", True), memory=memory)
+    acfg = dict(cfg["apply"], llm_answer_questions=cfg["llm"].get("answer_questions", True), memory=state.meta.setdefault("answers", {}))
     reapply = int(cfg["apply"].get("reapply_after_days", 7))
     years = experience_years(profile)
     out_dir = os.path.join(ROOT, "out", "portals", args.site)

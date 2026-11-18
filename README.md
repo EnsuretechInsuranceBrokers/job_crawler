@@ -256,6 +256,40 @@ No bot can honestly promise 100% unattended applications:
 | Aggregator job that links to some other website | Tailors the resume and gives you the link. |
 | LinkedIn, Naukri, Glassdoor, Indeed and other login-walled sites | Not automated, on purpose – see below. |
 
+### Big-company career sites (run on your computer)
+
+Microsoft, Google, Apple, Amazon, the Workday companies (Nvidia, Salesforce, Adobe,
+Intel, PayPal, Walmart, Mastercard) and the SmartRecruiters companies (Swiggy,
+Freshworks, ServiceNow, Bosch, ...) need an account on each site, so on GitHub
+the bot only prepares packets for them. To have the bot apply there for you:
+
+1. Once, sign in to every site in the bot's own browser:
+
+   ```bash
+   JOBBOT_KEY=<key> python -m jobbot.careers login
+   ```
+
+   It opens one tab per site. Sign in, or press *Create Account* (on Workday every
+   company is a separate account; use a password manager). The browser keeps the
+   sign-ins in `~/.jobbot/browser`.
+
+2. Whenever you like (once a day is plenty):
+
+   ```bash
+   JOBBOT_KEY=<key> python -m jobbot.careers apply --limit 20
+   ```
+
+   It finds the matching postings itself, opens each one, presses Apply, and goes
+   through the application page by page: tailored resume upload, answers from your
+   profile, Next, Submit. It stops only for a sign-in, a CAPTCHA, an emailed code
+   or a question it has never seen. Type the answer to such a question once in the
+   terminal. From then on it is answered automatically, both here and by the
+   scheduled bot on GitHub. `--only workday,amazon` limits the sites; `--confirm`
+   asks before each final Submit.
+
+Expect the first run to ask the most questions (each site has its own forms) and
+later runs to need little more than an occasional sign-in.
+
 ### Naukri.com and Internshala (run on your computer)
 
 These two need your account, so they cannot run on GitHub. Run them yourself:

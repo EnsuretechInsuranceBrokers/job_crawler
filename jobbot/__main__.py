@@ -37,6 +37,8 @@ def run(args):
     os.makedirs(out_dir, exist_ok=True)
     state = State(os.path.join(ROOT, ".state", "demo.enc" if args.demo else "state.enc"), profile["state_key"])
     acfg["memory"] = state.meta.setdefault("answers", {})   # remembered multiple-choice answers
+    from .apply import with_learned
+    profile = with_learned(profile, state.meta.get("learned"))  # answers you typed once, on your computer
     llm = make_llm(cfg["llm"], profile)
     log(f"mode: {'DRY RUN' if dry else 'LIVE'}{' (demo profile)' if args.demo else ''}; "
         f"llm: {'on' if llm.enabled else 'off'}; remembered jobs: {len(state.jobs)}")

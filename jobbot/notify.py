@@ -163,6 +163,9 @@ def alert(profile, job, outcome, files=(), state=None):
     return sent
 
 
+CAREER_SITES = ("workday", "amazon", "microsoft", "google", "apple", "smartrecruiters")
+
+
 def daily_log(profile, results, dry_run, llm_count, state=None, quota=None, ai_down=False):
     """End-of-run digest. results: list of (job, outcome, pdf, used_llm)."""
     sent = [r for r in results if r[1].status == "submitted"]
@@ -181,6 +184,10 @@ def daily_log(profile, results, dry_run, llm_count, state=None, quota=None, ai_d
     if todo:
         lines += ["", "Need you:"]
         lines += [f"- {j.title} - {j.company} ({why.get(o.status, o.status)})\n  {j.url}" for j, o, *_ in todo]
+    careers = sum(1 for j, o, *_ in todo if o.status == "manual" and j.source in CAREER_SITES)
+    if careers:
+        lines += ["", f"{careers} of these are on company career sites (Workday, Amazon, Microsoft, Google, Apple, "
+                      "SmartRecruiters). On your computer, `python -m jobbot.careers apply` fills and submits them for you."]
     questions = sorted({q for _, o, *_ in results for q in o.unanswered})
     if questions:
         lines += ["", "Add answers for:"] + [f"- {q[:90]}" for q in questions[:8]]
