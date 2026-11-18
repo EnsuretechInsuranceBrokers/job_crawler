@@ -296,6 +296,7 @@ def rule_answer(label, profile, job=None):
     return None
 
 
+NATIVE_AMERICAN = re.compile(r"american indian|alaska(n)? native|native american|first nations|indigenous", re.I)
 AGREE = re.compile(r"^\W*(i )?(agree|accept|acknowledge|consent|confirm|yes)\b", re.I)
 SYNONYMS = {"male": "man", "female": "woman", "man": "male", "woman": "female"}
 
@@ -351,6 +352,9 @@ def pick_option(answer, options):
     """Map a free-form answer onto one of the offered option texts. Returns index or None."""
     a = norm(answer)
     texts = [norm(o["text"]) for o in options]
+    if NATIVE_AMERICAN.search(" ".join(texts)) and not NATIVE_AMERICAN.search(a) and "native" not in a:
+        # "Indian" must never land on "American Indian or Alaska Native" (that means Native American)
+        texts = ["" if NATIVE_AMERICAN.search(t) else t for t in texts]
     if a == "decline":
         return next((i for i, o in enumerate(options) if DECLINE.search(o["text"])), None)
     if a == "consent":  # internal token: the "I agree" style option

@@ -876,3 +876,16 @@ def test_big_company_sources_parse(monkeypatch):
     assert ms[0].url == "https://apply.careers.microsoft.com/careers/job/9" and apply_url(ms[0]) is None
     g = list(sources.google())
     assert len(g) == 1 and g[0].id == "123456789" and "Python" in g[0].description and apply_url(g[0]) is None
+
+
+def test_race_indian_then_asian_never_native_american():
+    us_eeo = [{"text": t} for t in ("American Indian or Alaska Native", "Asian (Not Hispanic or Latino)",
+                                    "Black or African American", "White", "Two or More Races", "Decline To Self Identify")]
+    answers = ["Indian", "Asian Indian", "South Asian", "Asian (Not Hispanic or Latino)", "Asian"]
+    first = next(i for i in (pick_option(a, us_eeo) for a in answers) if i is not None)
+    assert us_eeo[first]["text"] == "Asian (Not Hispanic or Latino)"
+    india = [{"text": t} for t in ("East Asian", "South Asian", "Indian", "White")]
+    assert india[next(i for i in (pick_option(a, india) for a in answers) if i is not None)]["text"] == "Indian"
+    assert pick_option("Indian", [{"text": "American Indian or Alaska Native"}, {"text": "White"}]) is None
+    assert pick_option("American Indian or Alaska Native", [{"text": "American Indian or Alaska Native"}]) == 0
+    assert pick_option("No", [{"text": "Yes, Hispanic or Latino"}, {"text": "No, not Hispanic or Latino"}]) == 1
