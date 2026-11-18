@@ -14,7 +14,7 @@ import re
 from .util import detail
 
 EXPECTED = re.compile(r"expect|desired|salary requirement|compensation requirement|(ctc|salary|pay|compensation).{0,30}(looking|seeking|ask)"
-                      r"|what (are|is) your (salary|compensation|pay)", re.I)
+                      r"|what (are|is) your (salary|compensation|pay)|target (base|salary|compensation|pay|ctc)", re.I)
 CURRENT = re.compile(r"current|present|last drawn|existing|previous", re.I)
 LAKH, CRORE = 100_000, 10_000_000
 SYMBOL = {"$": "USD", "£": "GBP", "€": "EUR", "₹": "INR", "C$": "CAD", "A$": "AUD", "S$": "SGD"}

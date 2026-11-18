@@ -208,7 +208,9 @@ BUILTIN = [  # (regex on short label, profile -> answer); first match wins
     (r"preferred name", lambda p: p["name"].split()[0]),
     (r"^(full |legal |your )*name\b", lambda p: p["name"]),
     (r"e-?mail", lambda p: p["email"]),
-    (r"phone|mobile|telephone", lambda p: p.get("phone")),
+    # "mobile" alone also appears in "experience in mobile engineering": only number-like labels
+    (r"phone|telephone|contact (number|no)|mobile( (number|no\.?|phone))?\s*\*?\s*$|^\s*mobile\b(?!.*(engineer|develop|app|experience))",
+     lambda p: p.get("phone")),
     (r"linkedin", lambda p: p["links"].get("linkedin")),
     (r"github", lambda p: p["links"].get("github")),
     (r"twitter|\bx\.com", lambda p: p["links"].get("twitter")),
