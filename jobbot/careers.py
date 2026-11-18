@@ -226,7 +226,7 @@ def main(argv=None):
 
 def _apply(context, pw, cfg, scfg, profile, args):
     from .cover import cover_letter
-    from .finish import STATE, sync_down, sync_up
+    from .sync import STATE, sync_down, sync_up
     from .llm import make_llm
     from .match import select
     from .render import render_letter_pdf, render_resume
@@ -284,12 +284,15 @@ def _apply(context, pw, cfg, scfg, profile, args):
         print(f"    -> {status}")
         if status in ("submitted", "unconfirmed"):
             state.record(job, status)
+            if not args.no_sync and sum(tally.get(k, 0) for k in ('submitted', 'unconfirmed')) % 10 == 0:
+                state.save()
+                sync_up(profile["state_key"])  # every 10: share progress with the other lanes as you go
         elif status == "closed":
             state.record(job, "dismissed")
         state.save()
     renderer.close()
     if not args.no_sync:
-        print("\nSaving the bot's memory..." + (" done." if sync_up() else " FAILED - run again later."))
+        print("\nSaving the bot's memory..." + (" done." if sync_up(profile["state_key"]) else " FAILED - run again later."))
     print("\n" + ", ".join(f"{k}: {v}" for k, v in sorted(tally.items())) if tally else "\nNothing to do.")
     return 0
 

@@ -14,44 +14,15 @@ Do not run it while the scheduled bot is running: both write the same memory.
 import argparse
 import os
 import re
-import subprocess
 import sys
 import time
 
 from .config import ROOT
 
 WAITING = ("verification", "captcha", "rejected", "unconfirmed", "needs_answers", "error")
-STATE = os.path.join(ROOT, ".state", "state.enc")
 
 
-def _git(*args, cwd=ROOT):
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
-
-
-def sync_down():
-    """Fetch the bot's encrypted memory from the bot-state branch."""
-    os.makedirs(os.path.dirname(STATE), exist_ok=True)
-    if _git("fetch", "-q", "--depth=1", "origin", "bot-state").returncode != 0:
-        return False
-    blob = subprocess.run(["git", "show", "FETCH_HEAD:state.enc"], cwd=ROOT, capture_output=True)
-    if blob.returncode != 0 or not blob.stdout:
-        return False
-    with open(STATE, "wb") as f:
-        f.write(blob.stdout)
-    return True
-
-
-def sync_up():
-    """Publish the updated memory the same way the workflow does (single commit, bot-state branch)."""
-    url = _git("remote", "get-url", "origin").stdout.strip()
-    d = os.path.dirname(STATE)
-    for step in (["init", "-q", "-b", "bot-state"], ["add", "state.enc"],
-                 ["-c", "user.name=jobbot", "-c", "user.email=jobbot@users.noreply.github.com", "commit", "-qm", "encrypted state"],
-                 ["push", "-qf", url, "bot-state"]):
-        r = _git(*step, cwd=d)
-        if r.returncode != 0 and step[0] != "init":
-            return False
-    return True
+from .sync import STATE, sync_down, sync_up  # noqa: E402,F401  (shared, merge-safe memory sync)
 
 
 def waiting(state, only=None):
@@ -154,7 +125,7 @@ def main(argv=None):
         context.close()
     state.save()
     if not args.no_sync:
-        print("\nSaving the bot's memory..." + (" done." if sync_up() else " FAILED - run again later so the bot does not redo these."))
+        print("\nSaving the bot's memory..." + (" done." if sync_up(profile["state_key"]) else " FAILED - run again later so the bot does not redo these."))
     print(f"{done} application(s) submitted by you this session.")
     return 0
 

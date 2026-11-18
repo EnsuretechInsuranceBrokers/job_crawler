@@ -302,7 +302,7 @@ def main(argv=None):
 
     from .config import load_config, load_profile
     from .cover import cover_letter
-    from .finish import STATE, sync_down, sync_up
+    from .sync import STATE, sync_down, sync_up
     from .llm import make_llm
     from .match import score_job
     from .render import render_resume
@@ -383,12 +383,15 @@ def main(argv=None):
                     state.save()
                 if status in ("submitted", "unconfirmed"):
                     done += 1
+                    if not args.no_sync and sum(tally.get(k, 0) for k in ('submitted', 'unconfirmed')) % 10 == 0:
+                        state.save()
+                        sync_up(profile["state_key"])  # every 10: share progress with the other lanes as you go
                     time.sleep(PACE_SECONDS)
         context.close()
         renderer.close()
     state.save()
     if not args.no_sync:
-        print("\nSaving the bot's memory..." + (" done." if sync_up() else " FAILED - run again later."))
+        print("\nSaving the bot's memory..." + (" done." if sync_up(profile["state_key"]) else " FAILED - run again later."))
     print(f"\n{done} application(s) sent on {args.site}. " + ", ".join(f"{k}: {v}" for k, v in sorted(tally.items())))
     return 0
 

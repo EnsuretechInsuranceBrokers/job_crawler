@@ -98,14 +98,10 @@ jobs:
         run: python -m jobbot ${{ github.event_name == 'pull_request' && '--limit 12' || '' }}
 
       - name: Save encrypted state
+        # Merge-safe: folds in whatever another lane (e.g. jobbot.careers on your computer) uploaded
+        # meanwhile, then replaces the branch only if nobody uploaded in between; otherwise retries.
         if: always() && steps.setup.outputs.ready && hashFiles('.state/state.enc') != ''
-        run: |
-          cd .state
-          git init -q -b bot-state
-          git add state.enc
-          if [ -f badge.json ]; then git add badge.json; fi
-          git -c user.name=jobbot -c user.email=jobbot@users.noreply.github.com commit -qm "encrypted state"
-          git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" bot-state
+        run: python -m jobbot.sync push
 
       - name: Upload encrypted report
         if: always() && steps.setup.outputs.ready
