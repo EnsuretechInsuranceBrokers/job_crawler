@@ -78,7 +78,7 @@ sources:
 
 match:
   min_score: 0.55        # 0.5 = title matches, +0.5 scaled by skill overlap
-  max_age_days: 60       # ignore postings older than this
+  max_age_days: 90       # ignore postings older than this
 
 apply:
   dry_run: false          # true: fill forms but never press submit. Flip to false when the report looks right.
