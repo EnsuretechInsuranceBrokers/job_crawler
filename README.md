@@ -256,7 +256,31 @@ No bot can honestly promise 100% unattended applications:
 | Aggregator job that links to some other website | Tailors the resume and gives you the link. |
 | LinkedIn, Naukri, Glassdoor, Indeed and other login-walled sites | Not automated, on purpose – see below. |
 
-### Why the bot does not log in to LinkedIn, Naukri or Glassdoor
+### Naukri.com and Internshala (run on your computer)
+
+These two need your account, so they cannot run on GitHub. Run them yourself:
+
+```bash
+pip install -r requirements.txt && python -m playwright install chromium
+JOBBOT_KEY=<key> python -m jobbot.portals naukri --limit 30 --location Mumbai
+JOBBOT_KEY=<key> python -m jobbot.portals internshala --limit 20            # --kind internships for internships
+```
+
+A browser window opens with its own saved profile (`~/.jobbot/browser`). Log in
+once yourself (password / OTP); later runs reuse the session. The bot then
+searches your `search.titles`, keeps postings your profile matches, presses
+Apply and answers Naukri's recruiter questionnaire or Internshala's form
+(cover letter, availability, assessment questions) from your `answers:`, the
+salary estimate and its memory. A question it cannot answer is asked once in
+the terminal and remembered for every later run, on every site. A CAPTCHA or a
+login prompt hands the window back to you. "Apply on company site" postings
+are skipped. It waits 25 seconds between applications and writes everything to
+the same encrypted memory, so the scheduled bot never applies to the same role twice.
+
+Both sites' terms restrict automated use and Naukri caps daily applies, so keep
+the limits modest: the account, and the risk of it being restricted, are yours.
+
+### Why the bot does not log in to LinkedIn or Glassdoor
 
 These sites forbid automated accounts and applications in their terms, verify
 sign-ups by phone OTP, and actively detect bots. Getting past that means
