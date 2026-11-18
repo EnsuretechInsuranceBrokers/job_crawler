@@ -575,6 +575,12 @@ class FormFiller:
             self._tick(f["jb"])
             return True
         a = rule_answer(f["label"], self.profile, self.job) if f["label"] else None
+        if a is None and f["label"] and (self.profile.get("salary") or {}).get("expected") == "ai":
+            from .salary import answers_for, estimate, is_expected_salary
+            if is_expected_salary(f["label"]):
+                kind = "number" if f.get("info", "").startswith("input[number]") else f["kind"]
+                a = answers_for(estimate(self.job, self.profile, self.llm, self.cfg.setdefault("salary_cache", {})),
+                                f["label"], kind) or None
         for candidate in ([a] if isinstance(a, str) else a or []):
             if self.put(f, candidate):
                 return True

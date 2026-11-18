@@ -731,3 +731,43 @@ def test_more_built_in_answers(profile, tmp_path, job):
         assert not s.seen(job, 7, f"sig-{n + 1}")
         s.record(job, "needs_answers", f"sig-{n}")
     assert s.seen(job, 7, "sig-other")
+
+
+def test_expected_salary_per_job(profile):
+    from jobbot.salary import answers_for, estimate, is_expected_salary, posting_range
+    assert is_expected_salary("What is your expected fixed CTC?") and is_expected_salary("Salary expectations")
+    assert not is_expected_salary("What is your current CTC?") and not is_expected_salary("Expected start date")
+    assert posting_range("The base pay range is $120,000 - $150,000 per year.") == (120000, 150000, "USD")
+    assert posting_range("CTC: 18 - 24 LPA") == (1_800_000, 2_400_000, "INR")
+    assert posting_range("Salary ₹15L – ₹25L") == (1_500_000, 2_500_000, "INR")
+    assert posting_range("We have 5-10 years of history") is None
+    profile["salary"] = {"expected": "ai", "premium": 0.08, "current_lpa": 5}
+    blr = Job("g", "1", "Acme", "Backend Engineer", "Bengaluru, India", "u", "Pay: 18 - 24 LPA")
+    est = estimate(blr, profile)                                   # range in the posting: no AI needed
+    assert est["currency"] == "INR" and est["amount"] == 2_250_000  # midpoint 21 L + 8%, rounded to 50k
+    assert answers_for(est, "What is your expected fixed CTC?", "text")[0] == "22.5 LPA"
+    assert answers_for(est, "Expected CTC (in LPA)", "number") == ["22.5"]
+    assert answers_for(est, "Expected annual salary in INR", "number")[0] == "2250000"
+
+    class Model:
+        enabled, calls = True, 0
+
+        def ask(self, system, user, as_json=False):
+            Model.calls += 1
+            assert "Bengaluru" in user and as_json
+            return {"currency": "INR", "median": 1_400_000, "low": 1e6, "high": 2e6, "basis": "typical for SDE-2"}
+
+    cache = {}
+    bare = Job("g", "2", "Acme", "SDE 2", "Bengaluru, India", "u", "No pay listed.")
+    est = estimate(bare, profile, Model(), cache)
+    assert est["amount"] == 1_500_000 and Model.calls == 1        # 14 L median + 8% -> 15.1 L, rounded
+    estimate(bare, profile, Model(), cache)
+    assert Model.calls == 1                                        # cached per job
+    us = Job("g", "3", "Acme", "SWE", "Remote - US", "u", "")
+
+    class US(Model):
+        def ask(self, system, user, as_json=False):
+            return {"currency": "USD", "median": 140000}
+
+    assert answers_for(estimate(us, profile, US()), "Desired salary", "text")[0] == "$151,000 per year"
+    assert estimate(Job("g", "4", "Acme", "SWE", "Pune", "u", ""), profile, None) is None   # nothing to go on: left for you
