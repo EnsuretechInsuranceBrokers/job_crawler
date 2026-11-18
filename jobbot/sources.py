@@ -90,8 +90,94 @@ def arbeitnow(_=None):
                   j["url"], strip_html(j.get("description", "")), bool(j.get("remote")), _ts(j.get("created_at")))
 
 
-ATS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby}
-AGGREGATORS = {"remotive": remotive, "remoteok": remoteok, "arbeitnow": arbeitnow}
+INDIA_OR_REMOTE = ("in",)
+
+
+def smartrecruiters(company):
+    """SmartRecruiters company board (ServiceNow, Bosch, Swiggy, Freshworks ...). The postings API is public;
+    the application pages are behind bot protection (DataDome), so these become "apply yourself" packets.
+    Details are fetched only for postings in India or marked remote, to keep the number of calls small."""
+    offset, seen = 0, 0
+    while offset < 1000:
+        data = _get(f"https://api.smartrecruiters.com/v1/companies/{company}/postings?limit=100&offset={offset}")
+        rows = data.get("content", [])
+        for j in rows:
+            loc = j.get("location") or {}
+            if loc.get("country") not in INDIA_OR_REMOTE and not (loc.get("remote") and not loc.get("country")):
+                continue
+            seen += 1
+            if seen > 80:
+                return
+            try:
+                det = _get(j["ref"])
+            except Exception:  # noqa: BLE001
+                continue
+            sections = ((det.get("jobAd") or {}).get("sections") or {})
+            text = "\n".join(t for t in (strip_html((sections.get(k) or {}).get("text", ""))
+                                          for k in ("jobDescription", "qualifications", "additionalInformation")) if t)
+            yield Job("smartrecruiters", str(j["id"]), (det.get("company") or {}).get("name") or _pretty(company), j["name"].strip(),
+                      loc.get("fullLocation") or loc.get("city") or "", det.get("applyUrl") or det.get("postingUrl", ""), text,
+                      bool(loc.get("remote")), _ts(j.get("releasedDate")), company)
+        offset += 100
+        if offset >= int(data.get("totalFound", 0)):
+            return
+
+
+def workday(spec):
+    """Workday career site, as "tenant/wdN/site" (e.g. "salesforce/wd12/External_Career_Site").
+    Applying on Workday needs an account, so these jobs become "apply yourself" packets."""
+    tenant, wd, site = spec.split("/")
+    base = f"https://{tenant}.{wd}.myworkdayjobs.com/wday/cxs/{tenant}/{site}"
+    headers = {**UA, "Accept": "application/json", "Content-Type": "application/json"}
+    seen = set()
+    for query in ("software engineer", "developer", "backend", "data engineer", "sre devops"):
+        for offset in range(0, 100, 20):
+            r = requests.post(f"{base}/jobs", json={"appliedFacets": {}, "limit": 20, "offset": offset, "searchText": f"{query} India"},
+                              headers=headers, timeout=TIMEOUT)
+            r.raise_for_status()
+            rows = r.json().get("jobPostings", [])
+            for j in rows:
+                path = j.get("externalPath", "")
+                if path in seen or "india" not in (j.get("locationsText", "") + path).lower() and "remote" not in j.get("locationsText", "").lower():
+                    continue
+                seen.add(path)
+                try:
+                    info = requests.get(base + path, headers=headers, timeout=TIMEOUT).json().get("jobPostingInfo", {})
+                except Exception:  # noqa: BLE001
+                    info = {}
+                yield Job("workday", path.rsplit("_", 1)[-1] or path, _pretty(tenant), j.get("title", "").strip(),
+                          info.get("location") or j.get("locationsText", ""), info.get("externalUrl") or f"https://{tenant}.{wd}.myworkdayjobs.com/{site}{path}",
+                          strip_html(info.get("jobDescription", "")), "remote" in j.get("locationsText", "").lower(),
+                          _ts(info.get("startDate")), tenant)
+            if len(rows) < 20:
+                break
+
+
+def amazon(_=None):
+    """amazon.jobs, India. Applying needs an Amazon login, so these become "apply yourself" packets."""
+    seen = set()
+    for query in ("software development engineer", "software engineer", "data engineer", "support engineer", "systems engineer"):
+        for offset in (0, 100):
+            data = _get(f"https://www.amazon.jobs/en/search.json?base_query={requests.utils.quote(query)}"
+                        f"&normalized_country_code%5B%5D=IND&result_limit=100&offset={offset}")
+            for j in data.get("jobs", []):
+                if j["id_icims"] in seen:
+                    continue
+                seen.add(j["id_icims"])
+                text = "\n".join(strip_html(j.get(k, "")) for k in ("description", "basic_qualifications", "preferred_qualifications"))
+                posted = 0.0
+                try:
+                    posted = datetime.strptime(j.get("posted_date", ""), "%B %d, %Y").timestamp()
+                except ValueError:
+                    pass
+                yield Job("amazon", str(j["id_icims"]), j.get("company_name") or "Amazon", j["title"].strip(), j.get("normalized_location", ""),
+                          "https://www.amazon.jobs" + j.get("job_path", ""), text, False, posted, "amazon")
+            if len(data.get("jobs", [])) < 100:
+                break
+
+
+ATS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby, "smartrecruiters": smartrecruiters, "workday": workday}
+AGGREGATORS = {"remotive": remotive, "remoteok": remoteok, "arbeitnow": arbeitnow, "amazon": amazon}
 
 
 def crawl(sources_cfg):

@@ -816,3 +816,27 @@ def test_latex_compiles_when_available(tmp_path, profile):
     doc = r"\documentclass{article}\begin{document}Hello \textbf{Go}\end{document}"
     assert compile_pdf(doc, str(tmp_path / "r.pdf")) == 1 and (tmp_path / "r.pdf").read_bytes()[:5] == b"%PDF-"
     assert compile_pdf(r"\documentclass{article}\begin{document}\undefinedcommand\end{document}", str(tmp_path / "x.pdf")) == 0
+
+
+def test_company_career_site_sources(monkeypatch):
+    from jobbot import sources
+    from jobbot.apply import apply_url
+    pages = {
+        "https://api.smartrecruiters.com/v1/companies/Acme/postings?limit=100&offset=0": {"totalFound": 2, "content": [
+            {"id": "1", "name": "Backend Engineer", "releasedDate": "2026-11-01T00:00:00Z", "ref": "D1",
+             "location": {"country": "in", "fullLocation": "Pune, MH, India"}},
+            {"id": "2", "name": "Sales Lead", "releasedDate": "2026-11-01T00:00:00Z", "ref": "D2", "location": {"country": "us"}}]},
+        "D1": {"company": {"name": "Acme Corp"}, "applyUrl": "https://jobs.smartrecruiters.com/Acme/1",
+               "jobAd": {"sections": {"jobDescription": {"text": "<p>Go and Kafka</p>"}}}},
+    }
+    monkeypatch.setattr(sources, "_get", lambda url: pages[url] if url in pages else {"jobs": []})
+    sr = list(sources.smartrecruiters("Acme"))
+    assert [(j.title, j.company, j.description) for j in sr] == [("Backend Engineer", "Acme Corp", "Go and Kafka")]
+    assert apply_url(sr[0]) is None                                         # protected page: apply-yourself packet
+    amazon_page = {"jobs": [{"id_icims": "77", "title": "SDE I", "normalized_location": "Bengaluru, Karnataka, IND",
+                             "job_path": "/en/jobs/77/sde-i", "description": "Java", "basic_qualifications": "CS degree",
+                             "posted_date": "November 18, 2026", "company_name": "Amazon Dev Center India"}]}
+    monkeypatch.setattr(sources, "_get", lambda url: amazon_page)
+    am = list(sources.amazon())
+    assert len(am) == 1 and am[0].url == "https://www.amazon.jobs/en/jobs/77/sde-i" and am[0].posted > 1.7e9
+    assert "CS degree" in am[0].description and apply_url(am[0]) is None

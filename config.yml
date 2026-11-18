@@ -33,6 +33,14 @@ sources:
           tekion, sarvam, atlys, snowflake, clickhouse, atlan, composio, plane,
           opengov, kong, uipath, airwallex, anyscale, poshmark, commure,
           demandbase, redis, applied]
+  # Company career sites on SmartRecruiters. Verified to have India openings (Nov 2026). Their application pages
+  # are protected against automated browsers, so these jobs arrive as "apply yourself" packets.
+  smartrecruiters: [Swiggy, Freshworks, ServiceNow, BoschGroup, Experian, NielsenIQ, Wise, Endava, WesternDigital, Canva]
+  # Big companies' own career sites. Applying there needs an account on each site, which the bot does not
+  # create, so these jobs arrive as tailored "apply yourself" packets (resume + cover letter + link).
+  workday: [salesforce/wd12/External_Career_Site, nvidia/wd5/NVIDIAExternalCareerSite, adobe/wd5/external_experienced,
+            intel/wd1/External, paypal/wd1/jobs, walmart/wd5/WalmartExternal, mastercard/wd1/CorporateCareers]
+  amazon: true
   # Free aggregator APIs. Their jobs link to arbitrary sites, so matches are
   # tailored and put in your report for a manual click, not auto-submitted.
   remotive: true
