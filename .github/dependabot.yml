@@ -1,0 +1,32 @@
+# Keeps the bot's dependencies current: Python packages (requirements.txt) and the
+# GitHub Actions the workflows use. Patch and minor updates merge themselves once the
+# tests pass (see .github/workflows/dependabot-automerge.yml); major updates wait for you.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "02:00"
+      timezone: Asia/Kolkata
+    versioning-strategy: increase     # raise the ">=" floor to the newest release
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: deps
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "02:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: ci

@@ -890,3 +890,14 @@ def test_race_indian_then_asian_never_native_american():
     assert pick_option("Indian", [{"text": "American Indian or Alaska Native"}, {"text": "White"}]) is None
     assert pick_option("American Indian or Alaska Native", [{"text": "American Indian or Alaska Native"}]) == 0
     assert pick_option("No", [{"text": "Yes, Hispanic or Latino"}, {"text": "No, not Hispanic or Latino"}]) == 1
+
+
+def test_mobile_engineering_is_not_a_phone_question(profile):
+    assert rule_answer("Select your experience in mobile engineering.", profile) is None
+    assert rule_answer("Mobile Number", profile) == profile["phone"]
+    assert rule_answer("Contact Number", profile) == profile["phone"]
+
+
+def test_target_compensation_counts_as_expected_salary():
+    from jobbot.salary import is_expected_salary
+    assert is_expected_salary("What is your target base and bonus compensation for the role?")

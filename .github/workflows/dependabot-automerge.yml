@@ -1,0 +1,34 @@
+name: dependabot auto-merge
+# Merges Dependabot's patch and minor updates by itself once the test suite passes on them,
+# so dependencies keep updating with nobody watching. Major updates (possible breaking
+# changes) are left open for you to review.
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+      - name: Wait for the tests, then merge
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.html_url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for i in $(seq 1 70); do
+            result=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?check_name=test" \
+                     --jq '[.check_runs[] | select(.status == "completed") | .conclusion] | first // ""')
+            if [ "$result" = "success" ]; then gh pr merge "$PR" --squash --delete-branch; exit 0; fi
+            if [ -n "$result" ]; then echo "tests: $result - leaving the update for you"; exit 0; fi
+            sleep 30
+          done
+          echo "tests did not finish in time - leaving the update for you"
