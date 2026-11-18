@@ -582,7 +582,13 @@ def test_ai_outage_falls_back_to_manual_input(monkeypatch, tmp_path, profile, jo
     assert not used and out["skills"] and not bot.gave_up
     for _ in range(3):
         bot.ask("s", "u")
-    assert bot.gave_up and not bot.enabled and bot.ask("s", "u") is None
+    assert bot.gave_up and bot.ask("s", "u") is None            # paused: no more calls for now
+    calls_while_paused = bot.calls
+    bot.ask("s", "u")
+    assert bot.calls == calls_while_paused
+    bot.paused_until = 0                                         # the pause is over: it tries again
+    bot.ask("s", "u")
+    assert bot.calls == calls_while_paused + 1 and bot.enabled
     results = [(job, Outcome("needs_answers", unanswered=["Why us?"]), None, False)]
     text = report.build(results, False, str(tmp_path), {}, ai_down=True)
     assert "The AI stopped answering" in text and "Why us?" in text
@@ -639,3 +645,248 @@ def test_finish_lists_what_is_waiting(tmp_path, job):
     assert finish.job_from_record(job.key, s.jobs[job.key], {job.key: job}) is job
     assert finish.job_from_record(job.key, s.jobs[job.key], {}) is None        # posting closed
     assert "pick up" in finish.__doc__.lower()
+
+
+def test_one_model_call_covers_resume_and_letter(profile, job):
+    from jobbot.cover import cover_letter
+    body = ("I have spent six years building Python services on AWS, including a payment reconciliation pipeline "
+            "with Kafka that cut settlement delays dramatically. " * 3)
+    letter = f"Dear Initech hiring team,\n\n{body}\n\nThe Senior Backend Engineer role fits that work.\n\nSincerely,\nJane Doe"
+
+    class Once:
+        enabled, calls = True, 0
+
+        def ask(self, system, user, as_json=False):
+            Once.calls += 1
+            assert "GREETING: Dear Initech hiring team," in user and "cover_letter" in system
+            return {"skills": ["Python", "Kafka", "Go", "AWS", "Docker", "Redis"], "bullets": {"0": [0, 1], "1": [0]},
+                    "summary": "Backend engineer with 6 years of experience building Python and Kafka services on AWS.",
+                    "cover_letter": letter}
+
+    tailored, used = tailor(profile, job, Once())
+    text, by_llm = cover_letter(profile, tailored, job, Once())
+    assert used and by_llm and text == letter and Once.calls == 1      # the letter cost no second call
+    assert "_cover_letter" not in tailored
+    # a letter that invents a skill is dropped in favour of the template, still without another call
+    tailored, _ = tailor(profile, job, Once())
+    tailored["_cover_letter"] = letter.replace("Python services", "Rust and Elixir services")
+    text, by_llm = cover_letter(profile, tailored, job, Once())
+    assert not by_llm and text.startswith("Dear Initech hiring team,") and Once.calls == 2
+
+
+def test_backup_ai_provider(monkeypatch):
+    from jobbot import llm as llm_mod
+    hits = []
+
+    class Resp:
+        def __init__(self, status, payload=None):
+            self.status_code, self.payload, self.headers, self.text = status, payload or {}, {}, ""
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise llm_mod.requests.HTTPError("x")
+
+        def json(self):
+            return self.payload
+
+    def post(url, **kw):
+        hits.append(url.split("/")[2])
+        if "openrouter" in url:
+            return Resp(429)
+        return Resp(200, {"choices": [{"message": {"content": "hello"}}]})
+
+    monkeypatch.setattr(llm_mod.requests, "post", post)
+    monkeypatch.setattr(llm_mod.requests, "get", lambda url, **kw: Resp(200, {"data": []}))
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda s: None)
+    profile = {"llm": [{"provider": "openrouter", "api_key": "a"}, {"provider": "groq", "api_key": "b"}]}
+    bot = llm_mod.make_llm({"enabled": True}, profile)
+    assert isinstance(bot, llm_mod.Chain) and bot.enabled
+    assert bot.ask("s", "u") == "hello" and "api.groq.com" in hits       # first provider is out, second answers
+    assert not bot.gave_up and bot.answered == 1
+    assert isinstance(llm_mod.make_llm({}, {"llm": {"provider": "groq", "api_key": "b"}}), llm_mod.LLM)
+
+
+def test_more_built_in_answers(profile, tmp_path, job):
+    profile["education"][0]["year"] = "Aug 2021 - May 2025"
+    assert rule_answer("Start date month", profile) == ["August", "Aug", "8", "08"]
+    assert rule_answer("End date month", profile)[0] == "May"
+    months = [{"text": m} for m in ("January", "May", "August")]
+    assert pick_option(rule_answer("End date month", profile)[0], months) == 1
+    assert rule_answer("State/Province", profile) == "Texas"         # from the example profile
+    del profile["state"]
+    assert rule_answer("State/Province", profile) is None            # never guessed when the profile has none
+    profile["state"] = "Texas"
+    assert rule_answer("State/Province", profile) == "Texas" and rule_answer("State", profile) == "Texas"
+    wordy = "Please enter your preferred Last Name/Surname (only enter your preferred Last Name/Surname)"
+    assert len(wordy) > 70 and rule_answer(wordy, profile) == "Doe"
+    assert rule_answer("x" * 80 + " current company", profile) is None          # other built-ins stay strict
+    eeo = [{"text": "Asian"}, {"text": "White"}, {"text": "I choose not to disclose"}]
+    assert pick_option("decline", eeo) == 2
+    notice = [{"text": t} for t in ("Immediate", "15 days", "30 days", "60 days", "90 days")]
+    assert pick_option("2 weeks", notice) == 1 and pick_option("5 weeks", notice) == 3
+    assert pick_option("3", [{"text": "1"}, {"text": "2"}, {"text": "5"}]) is None   # a plain number is never rounded up
+    # a stopped form is retried when the bot can do more, but not endlessly
+    s = State(str(tmp_path / "s.enc"), "k")
+    for n in range(3):
+        assert not s.seen(job, 7, f"sig-{n + 1}")
+        s.record(job, "needs_answers", f"sig-{n}")
+    assert s.seen(job, 7, "sig-other")
+
+
+def test_expected_salary_per_job(profile):
+    from jobbot.salary import answers_for, estimate, is_expected_salary, posting_range
+    assert is_expected_salary("What is your expected fixed CTC?") and is_expected_salary("Salary expectations")
+    assert not is_expected_salary("What is your current CTC?") and not is_expected_salary("Expected start date")
+    assert posting_range("The base pay range is $120,000 - $150,000 per year.") == (120000, 150000, "USD")
+    assert posting_range("CTC: 18 - 24 LPA") == (1_800_000, 2_400_000, "INR")
+    assert posting_range("Salary ₹15L – ₹25L") == (1_500_000, 2_500_000, "INR")
+    assert posting_range("We have 5-10 years of history") is None
+    profile["salary"] = {"expected": "ai", "premium": 0.08, "current_lpa": 5}
+    blr = Job("g", "1", "Acme", "Backend Engineer", "Bengaluru, India", "u", "Pay: 18 - 24 LPA")
+    est = estimate(blr, profile)                                   # range in the posting: no AI needed
+    assert est["currency"] == "INR" and est["amount"] == 2_250_000  # midpoint 21 L + 8%, rounded to 50k
+    assert answers_for(est, "What is your expected fixed CTC?", "text")[0] == "22.5 LPA"
+    assert answers_for(est, "Expected CTC (in LPA)", "number") == ["22.5"]
+    assert answers_for(est, "Expected annual salary in INR", "number")[0] == "2250000"
+
+    class Model:
+        enabled, calls = True, 0
+
+        def ask(self, system, user, as_json=False):
+            Model.calls += 1
+            assert "Bengaluru" in user and as_json
+            return {"currency": "INR", "median": 1_400_000, "low": 1e6, "high": 2e6, "basis": "typical for SDE-2"}
+
+    cache = {}
+    bare = Job("g", "2", "Acme", "SDE 2", "Bengaluru, India", "u", "No pay listed.")
+    est = estimate(bare, profile, Model(), cache)
+    assert est["amount"] == 1_500_000 and Model.calls == 1        # 14 L median + 8% -> 15.1 L, rounded
+    estimate(bare, profile, Model(), cache)
+    assert Model.calls == 1                                        # cached per job
+    us = Job("g", "3", "Acme", "SWE", "Remote - US", "u", "")
+
+    class US(Model):
+        def ask(self, system, user, as_json=False):
+            return {"currency": "USD", "median": 140000}
+
+    assert answers_for(estimate(us, profile, US()), "Desired salary", "text")[0] == "$151,000 per year"
+    assert estimate(Job("g", "4", "Acme", "SWE", "Pune", "u", ""), profile, None) is None   # nothing to go on: left for you
+
+
+TEX = r"""\documentclass{moderncv}
+\moderncvstyle{banking}
+\begin{document}
+% JOBBOT-SKILLS-BEGIN
+\cvitem[0em]{\skilllabel{Languages}}{\textbf{PHP, Python}, Go, C++, Q\#}
+\cvitem[0em]{\skilllabel{Databases}}{\textbf{MySQL}, Postgres, Redis, AWS (EC2, S3)}
+% JOBBOT-SKILLS-END
+\cventry{2026}{Dev}{Co}{}{}{
+\begin{itemize}
+    \item Built \textbf{RESTful APIs} in \textit{PHP/Laravel} with Redis caching and Kafka queues; see \href{https://x.y/Kafka}{site}.
+\end{itemize}}
+\end{document}
+"""
+
+
+def test_latex_bolds_only_what_the_job_asks_for(profile):
+    from jobbot.latex import tailor_tex
+    job = Job("g", "1", "Acme", "Backend Engineer", "Pune", "u", "Go, PostgreSQL, Redis and Kafka on AWS.")
+    profile["skills"] = ["Go", "Redis", "Kafka", "PHP"]
+    out, hits = tailor_tex(TEX, job, profile)
+    skills = out.split("% JOBBOT-SKILLS-BEGIN")[1].split("% JOBBOT-SKILLS-END")[0]
+    assert r"\textbf{PHP, Python}," in skills and r"\textbf{MySQL}," in skills  # the user's own bold always stays
+    assert r"\textbf{\textbf" not in out
+    assert r"\textbf{Go}" in skills and r"\textbf{Postgres}" in skills and r"\textbf{Redis}" in skills
+    assert r"\textbf{AWS (EC2, S3)}" in skills and r"Q\#" in skills
+    bullet = [l for l in out.splitlines() if r"\item" in l][0]
+    assert r"\textbf{RESTful APIs}" in bullet                              # the user's own emphasis stays
+    assert r"\textbf{Redis}" in bullet and r"\textbf{Kafka}" in bullet
+    assert r"\href{https://x.y/Kafka}{site}" in bullet                     # never inside commands
+    assert r"\textit{PHP/Laravel}" in bullet
+    # nothing is added or removed besides bold markers
+    strip = lambda t: t.replace(r"\textbf{", "").replace("}", "")
+    assert strip(out) == strip(TEX)
+
+
+def test_latex_compiles_when_available(tmp_path, profile):
+    import shutil
+
+    from jobbot.latex import compile_pdf
+    if not shutil.which("pdflatex"):
+        pytest.skip("LaTeX not installed")
+    doc = r"\documentclass{article}\begin{document}Hello \textbf{Go}\end{document}"
+    assert compile_pdf(doc, str(tmp_path / "r.pdf")) == 1 and (tmp_path / "r.pdf").read_bytes()[:5] == b"%PDF-"
+    assert compile_pdf(r"\documentclass{article}\begin{document}\undefinedcommand\end{document}", str(tmp_path / "x.pdf")) == 0
+
+
+def test_company_career_site_sources(monkeypatch):
+    from jobbot import sources
+    from jobbot.apply import apply_url
+    pages = {
+        "https://api.smartrecruiters.com/v1/companies/Acme/postings?limit=100&offset=0": {"totalFound": 2, "content": [
+            {"id": "1", "name": "Backend Engineer", "releasedDate": "2026-11-01T00:00:00Z", "ref": "D1",
+             "location": {"country": "in", "fullLocation": "Pune, MH, India"}},
+            {"id": "2", "name": "Sales Lead", "releasedDate": "2026-11-01T00:00:00Z", "ref": "D2", "location": {"country": "us"}}]},
+        "D1": {"company": {"name": "Acme Corp"}, "applyUrl": "https://jobs.smartrecruiters.com/Acme/1",
+               "jobAd": {"sections": {"jobDescription": {"text": "<p>Go and Kafka</p>"}}}},
+    }
+    monkeypatch.setattr(sources, "_get", lambda url: pages[url] if url in pages else {"jobs": []})
+    sr = list(sources.smartrecruiters("Acme"))
+    assert [(j.title, j.company, j.description) for j in sr] == [("Backend Engineer", "Acme Corp", "Go and Kafka")]
+    assert apply_url(sr[0]) is None                                         # protected page: apply-yourself packet
+    amazon_page = {"jobs": [{"id_icims": "77", "title": "SDE I", "normalized_location": "Bengaluru, Karnataka, IND",
+                             "job_path": "/en/jobs/77/sde-i", "description": "Java", "basic_qualifications": "CS degree",
+                             "posted_date": "November 18, 2026", "company_name": "Amazon Dev Center India"}]}
+    monkeypatch.setattr(sources, "_get", lambda url: amazon_page)
+    am = list(sources.amazon())
+    assert len(am) == 1 and am[0].url == "https://www.amazon.jobs/en/jobs/77/sde-i" and am[0].posted > 1.7e9
+    assert "CS degree" in am[0].description and apply_url(am[0]) is None
+
+
+def test_big_company_sources_parse(monkeypatch):
+    from jobbot import sources
+    from jobbot.apply import apply_url
+
+    class R:
+        def __init__(self, payload=None, text=""):
+            self.payload, self.text, self.status_code = payload, text, 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    def get(url, params=None, headers=None, timeout=None):
+        if url.endswith("/search") and "microsoft" in url:
+            return R({"data": {"positions": [] if params["start"] or params["query"] != "software engineer" else
+                               [{"id": 9, "name": "Software Engineer II", "locations": ["India, Telangana, Hyderabad"],
+                                 "postedTs": 1794462347, "positionUrl": "/careers/job/9"}]}})
+        if "position_details" in url:
+            return R({"data": {"jobDescription": "<p>C# and Azure</p>"}})
+        if "google.com" in url:
+            html = ('<a href="jobs/results/123456789-software-engineer-cloud">x</a><div>Software Engineer, Cloud\\n'
+                    'corporate_fare Google place Bengaluru, Karnataka, India  Minimum qualifications: Python</div>')
+            return R(text=html if params["q"] == "software engineer" and params["page"] == 1 else "")
+        return R(text="")
+
+    monkeypatch.setattr(sources.requests, "get", get)
+    monkeypatch.setattr(sources.time, "sleep", lambda s: None)
+    ms = list(sources.microsoft())
+    assert [(j.company, j.title, j.description) for j in ms] == [("Microsoft", "Software Engineer II", "C# and Azure")]
+    assert ms[0].url == "https://apply.careers.microsoft.com/careers/job/9" and apply_url(ms[0]) is None
+    g = list(sources.google())
+    assert len(g) == 1 and g[0].id == "123456789" and "Python" in g[0].description and apply_url(g[0]) is None
+
+
+def test_race_indian_then_asian_never_native_american():
+    us_eeo = [{"text": t} for t in ("American Indian or Alaska Native", "Asian (Not Hispanic or Latino)",
+                                    "Black or African American", "White", "Two or More Races", "Decline To Self Identify")]
+    answers = ["Indian", "Asian Indian", "South Asian", "Asian (Not Hispanic or Latino)", "Asian"]
+    first = next(i for i in (pick_option(a, us_eeo) for a in answers) if i is not None)
+    assert us_eeo[first]["text"] == "Asian (Not Hispanic or Latino)"
+    india = [{"text": t} for t in ("East Asian", "South Asian", "Indian", "White")]
+    assert india[next(i for i in (pick_option(a, india) for a in answers) if i is not None)]["text"] == "Indian"
+    assert pick_option("Indian", [{"text": "American Indian or Alaska Native"}, {"text": "White"}]) is None
+    assert pick_option("American Indian or Alaska Native", [{"text": "American Indian or Alaska Native"}]) == 0
+    assert pick_option("No", [{"text": "Yes, Hispanic or Latino"}, {"text": "No, not Hispanic or Latino"}]) == 1

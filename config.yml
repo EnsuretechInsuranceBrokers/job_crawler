@@ -24,15 +24,52 @@ sources:
                roblox, zinier, zoominfo, abnormalsecurity, bitgo, zuora, coursera,
                fourkites, starburst, apolloio, contentstack, deliveroo, jfrog,
                reltio, bloomreach, godaddy, launchdarkly, mixpanel, neo4j, simpplr,
-               wrike, yext, earnin, jumio, roku, thoughtworks]
+               wrike, yext, earnin, jumio, roku, thoughtworks,
+               # crypto (Nov 2026)
+               okx, bybit, ondofinance, gemini, consensys, binance, osmosis, aptoslabs, grayscale, sei, ripple, fireblocks, blockchain, bitpanda, layerzerolabs, jumpcrypto, galaxy,
+               # more companies, each verified to have tech roles open in India or remote (Nov 2026)
+               mozilla, grafanalabs, cribl, bitwarden, mercury, beyondtrust, canonical, monzo,
+               stage,  # KKR
+               honeycomb, customerio, circleci, wikimedia, planetscale, lattice, coreweave,
+               tenstorrent, slice, intercom,  # Fin (formerly Intercom)
+               lastpass, jetbrains, vonage, veracode, adyen,
+               khanacademy, squarespace, stabilityai, comet, tailscale, oura, dremio, storyblok,
+               appian, karat, dataiku, netlify, collibra, workato, saucelabs, fastspring, axonius,
+               medium, calm]
   lever: [palantir, spotify, veeva, outreach,
           paytm, gohighlevel, meesho, zeta, mindtickle, fampay, linkedin, cred,
-          hevodata, saviynt, coupa, nium, netomi, entrata]
+          hevodata, saviynt, coupa, nium, netomi, entrata,
+               # crypto (Nov 2026)
+               safe, moonpay, offchainlabs, crypto, zerion, jito, binance, anchorage, coinmarketcap, coingecko, 1inch,
+               # more companies, each verified to have tech roles open in India or remote (Nov 2026)
+               sysdig, fi, pocketfm, walkme, neon, 15five, metabase, matillion, toptal, fly,
+               animocabrands, ro]
   ashby: [ramp, notion, linear, openai, posthog, supabase, replit, vanta,
           elevenlabs, cohere, zapier,
           tekion, sarvam, atlys, snowflake, clickhouse, atlan, composio, plane,
           opengov, kong, uipath, airwallex, anyscale, poshmark, commure,
-          demandbase, redis, applied]
+          demandbase, redis, applied,
+               # crypto (Nov 2026)
+               paxos, elliptic, safe, alchemy, phantom, ledger, mystenlabs, helius, uniswap, injective, circle, turnkey, oplabs, compound, consensys, 0x, dune, jump, magiceden, layerzerolabs, quicknode, aptosfoundation,
+               # more companies, each verified to have tech roles open in India or remote (Nov 2026)
+               cerebras, plaid, lambda, baseten, vultr, ashby, nubank, sentry, 1password, fireworks,
+               docker, clickup, workos, delinea, perplexity, hostinger, iterable, gainsight, aleph,
+               fullstory, midjourney, runway, hightouch, neon, velocity, temporal, render, camunda,
+               hex, sophos, sanity, strava, webflow, drata, astronomer, quora, railway, patreon,
+               secureframe, cube, paddle, prefect, motherduck, substack, buffer, materialize,
+               lightdash, datafold, bubble, spotdraft]
+  # Company career sites on SmartRecruiters. Verified to have India openings (Nov 2026). Their application pages
+  # are protected against automated browsers, so these jobs arrive as "apply yourself" packets.
+  smartrecruiters: [Swiggy, Freshworks, ServiceNow, BoschGroup, Experian, NielsenIQ, Wise, Endava, WesternDigital, Canva]
+  # Big companies' own career sites. Applying there needs an account on each site, which the bot does not
+  # create, so these jobs arrive as tailored "apply yourself" packets (resume + cover letter + link).
+  workday: [salesforce/wd12/External_Career_Site, nvidia/wd5/NVIDIAExternalCareerSite, adobe/wd5/external_experienced,
+            intel/wd1/External, paypal/wd1/jobs, walmart/wd5/WalmartExternal, mastercard/wd1/CorporateCareers]
+  amazon: true
+  microsoft: true
+  google: true
+  apple: true
+  # Tesla's careers site blocks automated requests (Akamai), so it is not crawled.
   # Free aggregator APIs. Their jobs link to arbitrary sites, so matches are
   # tailored and put in your report for a manual click, not auto-submitted.
   remotive: true
@@ -41,7 +78,7 @@ sources:
 
 match:
   min_score: 0.55        # 0.5 = title matches, +0.5 scaled by skill overlap
-  max_age_days: 60       # ignore postings older than this
+  max_age_days: 90       # ignore postings older than this
 
 apply:
   dry_run: false          # true: fill forms but never press submit. Flip to false when the report looks right.
@@ -53,6 +90,7 @@ apply:
   reapply_after_days: 7  # a still-open job may be applied to again after this many days; 0 = never twice
   skip_if_ineligible: true  # do not submit when a required "are you located in ...?" must truthfully be answered no
   accept_consent: true   # tick required privacy/consent checkboxes
+  ai_for_manual: false   # true: also spend AI calls on the "apply yourself" packets
   alert_each: false      # true: also send a separate alert for every application that needs you
   delay_seconds: 20      # pause between applications
   public_badge: true     # publish a counts-only badge ("3 this week · 12 total") next to the encrypted state

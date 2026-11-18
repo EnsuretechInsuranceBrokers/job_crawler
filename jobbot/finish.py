@@ -14,44 +14,15 @@ Do not run it while the scheduled bot is running: both write the same memory.
 import argparse
 import os
 import re
-import subprocess
 import sys
 import time
 
 from .config import ROOT
 
 WAITING = ("verification", "captcha", "rejected", "unconfirmed", "needs_answers", "error")
-STATE = os.path.join(ROOT, ".state", "state.enc")
 
 
-def _git(*args, cwd=ROOT):
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
-
-
-def sync_down():
-    """Fetch the bot's encrypted memory from the bot-state branch."""
-    os.makedirs(os.path.dirname(STATE), exist_ok=True)
-    if _git("fetch", "-q", "--depth=1", "origin", "bot-state").returncode != 0:
-        return False
-    blob = subprocess.run(["git", "show", "FETCH_HEAD:state.enc"], cwd=ROOT, capture_output=True)
-    if blob.returncode != 0 or not blob.stdout:
-        return False
-    with open(STATE, "wb") as f:
-        f.write(blob.stdout)
-    return True
-
-
-def sync_up():
-    """Publish the updated memory the same way the workflow does (single commit, bot-state branch)."""
-    url = _git("remote", "get-url", "origin").stdout.strip()
-    d = os.path.dirname(STATE)
-    for step in (["init", "-q", "-b", "bot-state"], ["add", "state.enc"],
-                 ["-c", "user.name=jobbot", "-c", "user.email=jobbot@users.noreply.github.com", "commit", "-qm", "encrypted state"],
-                 ["push", "-qf", url, "bot-state"]):
-        r = _git(*step, cwd=d)
-        if r.returncode != 0 and step[0] != "init":
-            return False
-    return True
+from .sync import STATE, sync_down, sync_up  # noqa: E402,F401  (shared, merge-safe memory sync)
 
 
 def waiting(state, only=None):
@@ -79,8 +50,8 @@ def main(argv=None):
     from .apply import CONFIRM, apply_url, fill_form
     from .config import load_config, load_profile
     from .cover import cover_letter
-    from .llm import LLM
-    from .render import render_letter_pdf, render_pdf
+    from .llm import make_llm
+    from .render import render_letter_pdf, render_resume
     from .sources import crawl
     from .state import State
     from .tailor import tailor
@@ -98,15 +69,16 @@ def main(argv=None):
         return 0
     print(f"{len(rows)} application(s) waiting. Checking which postings are still open...")
     live = {j.key: j for j in crawl(cfg["sources"])}
-    llm = LLM(cfg["llm"], profile)
+    llm = make_llm(cfg["llm"], profile)
     acfg = dict(cfg["apply"], llm_answer_questions=cfg["llm"].get("answer_questions", True),
                 memory=state.meta.setdefault("answers", {}))
     out_dir = os.path.join(ROOT, "out", "finish")
     name = re.sub(r"\W+", "_", profile["name"]).strip("_")
     done = 0
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False, executable_path=os.environ.get("JOBBOT_CHROMIUM") or None)
-        context = browser.new_context(locale="en-US", viewport=None)
+        from .browser import open_profile, renderer, work_page
+        context = open_profile(pw)            # your saved sign-ins (~/.jobbot/browser), kept between jobs and runs
+        browser = renderer(pw)                # invisible: only turns resumes and letters into PDFs
         for n, (key, rec) in enumerate(rows, 1):
             job = job_from_record(key, rec, live)
             print(f"\n[{n}/{len(rows)}] {rec['title']} - {rec['company']}  (stopped: {rec['status']})")
@@ -117,15 +89,14 @@ def main(argv=None):
             job_dir = os.path.join(out_dir, f"{n:02d}_" + re.sub(r"\W+", "_", job.company)[:30])
             os.makedirs(job_dir, exist_ok=True)
             tailored, _ = tailor(profile, job, llm)
-            pdf = render_pdf(browser, tailored, os.path.join(job_dir, f"{name}_Resume.pdf"))
+            pdf = render_resume(browser, profile, tailored, job, os.path.join(job_dir, f"{name}_Resume.pdf"))
             letter, _ = cover_letter(profile, tailored, job, llm)
             letter_pdf = render_letter_pdf(browser, tailored, letter, os.path.join(job_dir, f"{name}_Cover_Letter.pdf"))
-            page = context.new_page()
+            page = work_page(context)            # same window every job: nothing is closed, no sign-in is lost
             try:
                 filler, open_questions = fill_form(page, apply_url(job), job, profile, pdf, acfg, llm, (letter_pdf, letter))
             except Exception as e:  # noqa: BLE001
                 print(f"    Could not open the form ({type(e).__name__}); skipping.")
-                page.close()
                 continue
             print(f"    Filled {filler.filled} fields. The browser window is yours now:")
             for q in open_questions:
@@ -147,17 +118,14 @@ def main(argv=None):
                 print("    Recorded as submitted" + ("" if confirmed else " (no confirmation text was visible - check your inbox)") + ".")
             elif answer == "x":
                 rec.update(status="dismissed", ts=int(time.time()))
-            try:
-                page.close()
-            except Exception:  # noqa: BLE001
-                pass
             state.save()
             if answer == "q":
                 break
         browser.close()
+        context.close()
     state.save()
     if not args.no_sync:
-        print("\nSaving the bot's memory..." + (" done." if sync_up() else " FAILED - run again later so the bot does not redo these."))
+        print("\nSaving the bot's memory..." + (" done." if sync_up(profile["state_key"]) else " FAILED - run again later so the bot does not redo these."))
     print(f"{done} application(s) submitted by you this session.")
     return 0
 

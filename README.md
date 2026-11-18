@@ -33,21 +33,28 @@ flowchart LR
 2. **Match** – job title must contain one of your target titles, location must
    fit, then jobs are ranked by overlap with your skills. Jobs handled before
    (or the same role in another city) are skipped.
-3. **Tailor** – reorders your skills and picks the most relevant bullets for
+3. **Resume** – if the profile has `resume_tex` (your own LaTeX resume, kept
+   encrypted), the only tailoring is bold: between `% JOBBOT-SKILLS-BEGIN` and
+   `% JOBBOT-SKILLS-END` the skills this posting mentions are bolded instead of
+   your usual emphasis, and matching technologies in your bullets are bolded too.
+   Nothing is added or reworded; if bolding would push it past one page the
+   original is used. Without `resume_tex`, or if LaTeX fails, the HTML resume
+   below is used.
+4. **Tailor** – reorders your skills and picks the most relevant bullets for
    each job, and rewrites the two-line summary. It can only *select and reorder
    what is already in your profile*; a summary that mentions anything your
    profile lacks is thrown away. Works by keyword matching out of the box, and
    with an AI model if you add a free API key (below).
-4. **Cover letter** – written per job under the same rule (facts from your
+5. **Cover letter** – written per job under the same rule (facts from your
    profile only; anything else falls back to a plain template), as PDF and text.
-5. **Apply** – opens the Greenhouse/Lever/Ashby form in headless Chromium, fills
+6. **Apply** – opens the Greenhouse/Lever/Ashby form in headless Chromium, fills
    it from your profile and your `answers`, uploads the tailored resume and
    cover letter and submits – but only if every required question has an answer.
-6. **Remember** – every handled job is recorded (encrypted) so it is not applied
+7. **Remember** – every handled job is recorded (encrypted) so it is not applied
    to twice within `reapply_after_days`; multiple-choice answers the AI gave are
    reused so the same question always gets the same answer; questions that stop
    forms are counted so the report can tell you which one to teach it next.
-7. **Notify** – a phone alert (Telegram, ntfy or WhatsApp) the moment a form
+8. **Notify** – a phone alert (Telegram, ntfy or WhatsApp) the moment a form
    needs you (CAPTCHA, verification code), a daily log after every run, an encrypted zip
    (workflow artifact) and, optionally, an email with the PDFs attached.
 
@@ -249,7 +256,65 @@ No bot can honestly promise 100% unattended applications:
 | Aggregator job that links to some other website | Tailors the resume and gives you the link. |
 | LinkedIn, Naukri, Glassdoor, Indeed and other login-walled sites | Not automated, on purpose – see below. |
 
-### Why the bot does not log in to LinkedIn, Naukri or Glassdoor
+### Big-company career sites (run on your computer)
+
+Microsoft, Google, Apple, Amazon, the Workday companies (Nvidia, Salesforce, Adobe,
+Intel, PayPal, Walmart, Mastercard) and the SmartRecruiters companies (Swiggy,
+Freshworks, ServiceNow, Bosch, ...) need an account on each site, so on GitHub
+the bot only prepares packets for them. To have the bot apply there for you:
+
+1. Once, sign in to every site in the bot's own browser:
+
+   ```bash
+   JOBBOT_KEY=<key> python -m jobbot.careers login
+   ```
+
+   It opens one tab per site. Sign in, or press *Create Account* (on Workday every
+   company is a separate account; use a password manager). The browser keeps the
+   sign-ins in `~/.jobbot/browser`.
+
+2. Whenever you like (once a day is plenty):
+
+   ```bash
+   JOBBOT_KEY=<key> python -m jobbot.careers apply --limit 20
+   ```
+
+   It finds the matching postings itself, opens each one, presses Apply, and goes
+   through the application page by page: tailored resume upload, answers from your
+   profile, Next, Submit. It stops only for a sign-in, a CAPTCHA, an emailed code
+   or a question it has never seen. Type the answer to such a question once in the
+   terminal. From then on it is answered automatically, both here and by the
+   scheduled bot on GitHub. `--only workday,amazon` limits the sites; `--confirm`
+   asks before each final Submit.
+
+Expect the first run to ask the most questions (each site has its own forms) and
+later runs to need little more than an occasional sign-in.
+
+### Naukri.com and Internshala (run on your computer)
+
+These two need your account, so they cannot run on GitHub. Run them yourself:
+
+```bash
+pip install -r requirements.txt && python -m playwright install chromium
+JOBBOT_KEY=<key> python -m jobbot.portals naukri --limit 30 --location Mumbai
+JOBBOT_KEY=<key> python -m jobbot.portals internshala --limit 20            # --kind internships for internships
+```
+
+A browser window opens with its own saved profile (`~/.jobbot/browser`). Log in
+once yourself (password / OTP); later runs reuse the session. The bot then
+searches your `search.titles`, keeps postings your profile matches, presses
+Apply and answers Naukri's recruiter questionnaire or Internshala's form
+(cover letter, availability, assessment questions) from your `answers:`, the
+salary estimate and its memory. A question it cannot answer is asked once in
+the terminal and remembered for every later run, on every site. A CAPTCHA or a
+login prompt hands the window back to you. "Apply on company site" postings
+are skipped. It waits 25 seconds between applications and writes everything to
+the same encrypted memory, so the scheduled bot never applies to the same role twice.
+
+Both sites' terms restrict automated use and Naukri caps daily applies, so keep
+the limits modest: the account, and the risk of it being restricted, are yours.
+
+### Why the bot does not log in to LinkedIn or Glassdoor
 
 These sites forbid automated accounts and applications in their terms, verify
 sign-ups by phone OTP, and actively detect bots. Getting past that means
@@ -292,7 +357,23 @@ llm:
 ```
 
 to your profile and re-seal it. The bot asks the provider which models exist and
-picks one, so there is no model name to keep up to date. With a model, resumes
+picks one, so there is no model name to keep up to date.
+
+Free tiers are small, so the bot is frugal: one model call covers a job's resume
+and cover letter, "apply yourself" packets use keyword tailoring
+(`ai_for_manual: false`), and a busy or rate-limited provider is paused for a few
+minutes and tried again later in the run. To add headroom, list more than one
+provider; the next is used whenever the first cannot answer:
+
+```yaml
+llm:
+  - {provider: gemini, api_key: "..."}
+  - {provider: groq, api_key: "..."}
+  - {provider: openrouter, api_key: "..."}
+```
+
+OpenRouter's free models allow only a few dozen requests a day, which a full
+run exhausts quickly; it works better as a backup than as the only provider. With a model, resumes
 and cover letters read better and the bot can answer open-ended questions
 ("Why do you want to work here?") from your real experience – the main reason
 forms otherwise stop for manual input. Your resume text is sent to that provider.

@@ -42,6 +42,7 @@ class LLM:
         self.json_mode = True
         self.calls = self.answered = 0
         self.gave_up = False  # True once the provider stopped answering during this run
+        self.paused_until, self.cooloff = 0.0, float(cfg.get("cooloff_seconds", 240))
         self.min_interval = float(cfg.get("min_seconds_between_calls", 4))  # stay under free per-minute limits
         self._last = 0.0
         self.native_gemini = "generativelanguage.googleapis.com" in self.base and not self.base.endswith("/openai")
@@ -66,7 +67,7 @@ class LLM:
 
     def ask(self, system, user, as_json=False):
         """Returns text (or parsed JSON), or None when the model is unavailable."""
-        if not self.enabled:
+        if not self.enabled or time.time() < self.paused_until:
             return None
         wait = self._last + self.min_interval - time.time()
         if wait > 0:
@@ -114,10 +115,17 @@ class LLM:
             status = status or getattr(r, "status_code", "")
             # error bodies carry no personal data, but only show them in verbose/demo runs anyway
             detail(f"LLM call failed: {type(e).__name__} status={status} body={(r.text[:200] if r is not None else '')!r}")
-            if self.failures >= 3 or status in (401, 403, 404):
-                self.enabled = False  # bad key or quota gone: stop trying this run
+            if status in (401, 403, 404):
+                self.enabled = False  # the key or endpoint is wrong: nothing will change during this run
                 self.gave_up = True
                 log(f"LLM disabled for this run ({type(e).__name__} {status}); using keyword tailoring")
+            elif self.failures >= 2:
+                # Busy or rate-limited. Free tiers reset by the minute, so step aside for a while and
+                # try again later in the run instead of writing off every remaining application.
+                self.paused_until, self.failures = time.time() + self.cooloff, 0
+                self.cooloff = min(self.cooloff * 2, 1800)
+                self.gave_up = True
+                log(f"LLM paused for {int((self.paused_until - time.time()) / 60)} min ({type(e).__name__} {status})")
             return None
 
 
@@ -181,6 +189,31 @@ def _gemini_call(self, system, user, as_json):
 
 
 LLM._gemini = _gemini_call
+
+
+class Chain:
+    """Several providers in order of preference: the first one that answers wins.
+    Profile form:  llm: [{provider: gemini, api_key: ...}, {provider: groq, api_key: ...}]"""
+
+    def __init__(self, cfg, profile):
+        entries = (profile or {}).get("llm") or []
+        self.members = [m for m in (LLM(cfg, {"llm": e}) for e in entries if isinstance(e, dict)) if m.enabled]
+
+    enabled = property(lambda self: any(m.enabled for m in self.members))
+    gave_up = property(lambda self: bool(self.members) and all(m.gave_up for m in self.members))
+    calls = property(lambda self: sum(m.calls for m in self.members))
+    answered = property(lambda self: sum(m.answered for m in self.members))
+
+    def ask(self, system, user, as_json=False):
+        for m in self.members:
+            reply = m.ask(system, user, as_json)
+            if reply is not None:
+                return reply
+        return None
+
+
+def make_llm(cfg, profile):
+    return Chain(cfg, profile) if isinstance((profile or {}).get("llm"), list) else LLM(cfg, profile)
 
 
 def _json_part(text):
