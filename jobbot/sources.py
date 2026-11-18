@@ -1,4 +1,5 @@
 """Job sources. Only public, documented JSON endpoints - no HTML scraping."""
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -130,7 +131,7 @@ def workday(spec):
     base = f"https://{tenant}.{wd}.myworkdayjobs.com/wday/cxs/{tenant}/{site}"
     headers = {**UA, "Accept": "application/json", "Content-Type": "application/json"}
     seen = set()
-    for query in ("software engineer", "developer", "backend", "data engineer", "sre devops"):
+    for query in BIG_QUERIES:
         for offset in range(0, 100, 20):
             r = requests.post(f"{base}/jobs", json={"appliedFacets": {}, "limit": 20, "offset": offset, "searchText": f"{query} India"},
                               headers=headers, timeout=TIMEOUT)
@@ -156,7 +157,7 @@ def workday(spec):
 def amazon(_=None):
     """amazon.jobs, India. Applying needs an Amazon login, so these become "apply yourself" packets."""
     seen = set()
-    for query in ("software development engineer", "software engineer", "data engineer", "support engineer", "systems engineer"):
+    for query in ("software development engineer",) + BIG_QUERIES:
         for offset in (0, 100):
             data = _get(f"https://www.amazon.jobs/en/search.json?base_query={requests.utils.quote(query)}"
                         f"&normalized_country_code%5B%5D=IND&result_limit=100&offset={offset}")
@@ -176,8 +177,102 @@ def amazon(_=None):
                 break
 
 
+BIG_QUERIES = ("software engineer", "software developer", "data engineer", "data scientist", "machine learning",
+               "site reliability", "devops", "cloud engineer", "security engineer", "network engineer", "qa engineer",
+               "support engineer", "solutions engineer", "data analyst", "systems engineer", "firmware", "frontend", "backend")
+BROWSER = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) jobbot/1.0", "Accept": "application/json, text/html"}
+
+
+def microsoft(_=None):
+    """careers.microsoft.com (India). Applying needs a Microsoft account: apply-yourself packets."""
+    base = "https://apply.careers.microsoft.com/api/pcsx"
+    seen = set()
+    for query in BIG_QUERIES:
+        if len(seen) >= 150:
+            return
+        for start in range(0, 60, 20):
+            time.sleep(0.5)  # the API rate-limits bursts
+            r = requests.get(f"{base}/search", params={"domain": "microsoft.com", "query": query, "location": "India",
+                                                       "start": start, "num": 20}, headers=BROWSER, timeout=TIMEOUT)
+            r.raise_for_status()
+            rows = (r.json().get("data") or {}).get("positions", [])
+            for p in rows:
+                if p["id"] in seen:
+                    continue
+                seen.add(p["id"])
+                desc = ""
+                try:
+                    time.sleep(0.3)
+                    d = requests.get(f"{base}/position_details", params={"position_id": p["id"], "domain": "microsoft.com", "hl": "en"},
+                                     headers=BROWSER, timeout=TIMEOUT).json().get("data", {})
+                    desc = strip_html(d.get("jobDescription", ""))
+                except Exception:  # noqa: BLE001
+                    pass
+                yield Job("microsoft", str(p["id"]), "Microsoft", p["name"].strip(), "; ".join(p.get("locations") or []),
+                          "https://apply.careers.microsoft.com" + p.get("positionUrl", ""), desc,
+                          "remote" in str(p.get("workLocationOption", "")).lower(), float(p.get("postedTs") or 0), "microsoft")
+            if len(rows) < 20:
+                break
+
+
+def google(_=None):
+    """google.com/about/careers (India). Applying needs a Google account: apply-yourself packets.
+    There is no public API, so the search results page is read; each card carries title, place and the
+    minimum qualifications, which serve as the description."""
+    base = "https://www.google.com/about/careers/applications/jobs/results"
+    seen = set()
+    for query in BIG_QUERIES[:10]:
+        for page in (1, 2, 3):
+            r = requests.get(base, params={"location": "India", "q": query, "page": page}, headers=BROWSER, timeout=TIMEOUT)
+            r.raise_for_status()
+            text = r.text
+            marks = list(re.finditer(r'jobs/results/(\d{6,})-([a-z0-9-]+)', text))
+            new = 0
+            for i, m in enumerate(marks):
+                jid = m.group(1)
+                if jid in seen:
+                    continue
+                seen.add(jid)
+                new += 1
+                chunk = text[m.start(): marks[i + 1].start() if i + 1 < len(marks) else m.start() + 6000]
+                plain = strip_html(chunk)
+                title = re.search(r"aria-label=\"([^\"]{3,120})\"", chunk)
+                head = plain.split("corporate_fare")[0].strip().split("\n")[-1].strip()
+                place = re.search(r"place\s+(.+?)(?:\s{2,}|\n|$)", plain)
+                yield Job("google", jid, "Google", (head or (title.group(1) if title else m.group(2).replace("-", " "))).strip()[:150],
+                          place.group(1).strip() if place else "India", f"{base}/{jid}-{m.group(2)}", plain[:4000], False, 0.0, "google")
+            if not new:
+                break
+
+
+def apple(_=None):
+    """jobs.apple.com (India). Applying needs an Apple ID: apply-yourself packets."""
+    seen = set()
+    for query in ("software", "engineer", "machine learning"):
+        for page in (1, 2):
+            r = requests.get("https://jobs.apple.com/en-in/search", params={"location": "india-INDC", "search": query, "page": page},
+                             headers=BROWSER, timeout=20)
+            r.raise_for_status()
+            found = re.findall(r'aria-label="([^"]+?) (\d{6,})" href="(/en-in/details/\d+/[^"?]+)[^"]*"', r.text)
+            new = 0
+            for title, jid, path in found:
+                if jid in seen:
+                    continue
+                seen.add(jid)
+                new += 1
+                desc = title
+                try:  # the details page carries the description and minimum qualifications
+                    desc = strip_html(requests.get("https://jobs.apple.com" + path, headers=BROWSER, timeout=20).text)[:6000]
+                except Exception:  # noqa: BLE001
+                    pass
+                yield Job("apple", jid, "Apple", title.strip(), "India", "https://jobs.apple.com" + path, desc, False, 0.0, "apple")
+            if not new:
+                break
+
+
 ATS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby, "smartrecruiters": smartrecruiters, "workday": workday}
-AGGREGATORS = {"remotive": remotive, "remoteok": remoteok, "arbeitnow": arbeitnow, "amazon": amazon}
+AGGREGATORS = {"remotive": remotive, "remoteok": remoteok, "arbeitnow": arbeitnow, "amazon": amazon,
+               "microsoft": microsoft, "google": google, "apple": apple}
 
 
 def crawl(sources_cfg):

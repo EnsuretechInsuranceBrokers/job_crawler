@@ -840,3 +840,39 @@ def test_company_career_site_sources(monkeypatch):
     am = list(sources.amazon())
     assert len(am) == 1 and am[0].url == "https://www.amazon.jobs/en/jobs/77/sde-i" and am[0].posted > 1.7e9
     assert "CS degree" in am[0].description and apply_url(am[0]) is None
+
+
+def test_big_company_sources_parse(monkeypatch):
+    from jobbot import sources
+    from jobbot.apply import apply_url
+
+    class R:
+        def __init__(self, payload=None, text=""):
+            self.payload, self.text, self.status_code = payload, text, 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    def get(url, params=None, headers=None, timeout=None):
+        if url.endswith("/search") and "microsoft" in url:
+            return R({"data": {"positions": [] if params["start"] or params["query"] != "software engineer" else
+                               [{"id": 9, "name": "Software Engineer II", "locations": ["India, Telangana, Hyderabad"],
+                                 "postedTs": 1794462347, "positionUrl": "/careers/job/9"}]}})
+        if "position_details" in url:
+            return R({"data": {"jobDescription": "<p>C# and Azure</p>"}})
+        if "google.com" in url:
+            html = ('<a href="jobs/results/123456789-software-engineer-cloud">x</a><div>Software Engineer, Cloud\\n'
+                    'corporate_fare Google place Bengaluru, Karnataka, India  Minimum qualifications: Python</div>')
+            return R(text=html if params["q"] == "software engineer" and params["page"] == 1 else "")
+        return R(text="")
+
+    monkeypatch.setattr(sources.requests, "get", get)
+    monkeypatch.setattr(sources.time, "sleep", lambda s: None)
+    ms = list(sources.microsoft())
+    assert [(j.company, j.title, j.description) for j in ms] == [("Microsoft", "Software Engineer II", "C# and Azure")]
+    assert ms[0].url == "https://apply.careers.microsoft.com/careers/job/9" and apply_url(ms[0]) is None
+    g = list(sources.google())
+    assert len(g) == 1 and g[0].id == "123456789" and "Python" in g[0].description and apply_url(g[0]) is None

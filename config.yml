@@ -24,15 +24,21 @@ sources:
                roblox, zinier, zoominfo, abnormalsecurity, bitgo, zuora, coursera,
                fourkites, starburst, apolloio, contentstack, deliveroo, jfrog,
                reltio, bloomreach, godaddy, launchdarkly, mixpanel, neo4j, simpplr,
-               wrike, yext, earnin, jumio, roku, thoughtworks]
+               wrike, yext, earnin, jumio, roku, thoughtworks,
+               # crypto (Nov 2026)
+               okx, bybit, ondofinance, gemini, consensys, binance, osmosis, aptoslabs, grayscale, sei, ripple, fireblocks, blockchain, bitpanda, layerzerolabs, jumpcrypto, galaxy]
   lever: [palantir, spotify, veeva, outreach,
           paytm, gohighlevel, meesho, zeta, mindtickle, fampay, linkedin, cred,
-          hevodata, saviynt, coupa, nium, netomi, entrata]
+          hevodata, saviynt, coupa, nium, netomi, entrata,
+               # crypto (Nov 2026)
+               safe, moonpay, offchainlabs, crypto, zerion, jito, binance, anchorage, coinmarketcap, coingecko, 1inch]
   ashby: [ramp, notion, linear, openai, posthog, supabase, replit, vanta,
           elevenlabs, cohere, zapier,
           tekion, sarvam, atlys, snowflake, clickhouse, atlan, composio, plane,
           opengov, kong, uipath, airwallex, anyscale, poshmark, commure,
-          demandbase, redis, applied]
+          demandbase, redis, applied,
+               # crypto (Nov 2026)
+               paxos, elliptic, safe, alchemy, phantom, ledger, mystenlabs, helius, uniswap, injective, circle, turnkey, oplabs, compound, consensys, 0x, dune, jump, magiceden, layerzerolabs, quicknode, aptosfoundation]
   # Company career sites on SmartRecruiters. Verified to have India openings (Nov 2026). Their application pages
   # are protected against automated browsers, so these jobs arrive as "apply yourself" packets.
   smartrecruiters: [Swiggy, Freshworks, ServiceNow, BoschGroup, Experian, NielsenIQ, Wise, Endava, WesternDigital, Canva]
@@ -41,6 +47,10 @@ sources:
   workday: [salesforce/wd12/External_Career_Site, nvidia/wd5/NVIDIAExternalCareerSite, adobe/wd5/external_experienced,
             intel/wd1/External, paypal/wd1/jobs, walmart/wd5/WalmartExternal, mastercard/wd1/CorporateCareers]
   amazon: true
+  microsoft: true
+  google: true
+  apple: true
+  # Tesla's careers site blocks automated requests (Akamai), so it is not crawled.
   # Free aggregator APIs. Their jobs link to arbitrary sites, so matches are
   # tailored and put in your report for a manual click, not auto-submitted.
   remotive: true
