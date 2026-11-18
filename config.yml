@@ -26,19 +26,38 @@ sources:
                reltio, bloomreach, godaddy, launchdarkly, mixpanel, neo4j, simpplr,
                wrike, yext, earnin, jumio, roku, thoughtworks,
                # crypto (Nov 2026)
-               okx, bybit, ondofinance, gemini, consensys, binance, osmosis, aptoslabs, grayscale, sei, ripple, fireblocks, blockchain, bitpanda, layerzerolabs, jumpcrypto, galaxy]
+               okx, bybit, ondofinance, gemini, consensys, binance, osmosis, aptoslabs, grayscale, sei, ripple, fireblocks, blockchain, bitpanda, layerzerolabs, jumpcrypto, galaxy,
+               # more companies, each verified to have tech roles open in India or remote (Nov 2026)
+               mozilla, grafanalabs, cribl, bitwarden, mercury, beyondtrust, canonical, monzo,
+               stage,  # KKR
+               honeycomb, customerio, circleci, wikimedia, planetscale, lattice, coreweave,
+               tenstorrent, slice, intercom,  # Fin (formerly Intercom)
+               lastpass, jetbrains, vonage, veracode, adyen,
+               khanacademy, squarespace, stabilityai, comet, tailscale, oura, dremio, storyblok,
+               appian, karat, dataiku, netlify, collibra, workato, saucelabs, fastspring, axonius,
+               medium, calm]
   lever: [palantir, spotify, veeva, outreach,
           paytm, gohighlevel, meesho, zeta, mindtickle, fampay, linkedin, cred,
           hevodata, saviynt, coupa, nium, netomi, entrata,
                # crypto (Nov 2026)
-               safe, moonpay, offchainlabs, crypto, zerion, jito, binance, anchorage, coinmarketcap, coingecko, 1inch]
+               safe, moonpay, offchainlabs, crypto, zerion, jito, binance, anchorage, coinmarketcap, coingecko, 1inch,
+               # more companies, each verified to have tech roles open in India or remote (Nov 2026)
+               sysdig, fi, pocketfm, walkme, neon, 15five, metabase, matillion, toptal, fly,
+               animocabrands, ro]
   ashby: [ramp, notion, linear, openai, posthog, supabase, replit, vanta,
           elevenlabs, cohere, zapier,
           tekion, sarvam, atlys, snowflake, clickhouse, atlan, composio, plane,
           opengov, kong, uipath, airwallex, anyscale, poshmark, commure,
           demandbase, redis, applied,
                # crypto (Nov 2026)
-               paxos, elliptic, safe, alchemy, phantom, ledger, mystenlabs, helius, uniswap, injective, circle, turnkey, oplabs, compound, consensys, 0x, dune, jump, magiceden, layerzerolabs, quicknode, aptosfoundation]
+               paxos, elliptic, safe, alchemy, phantom, ledger, mystenlabs, helius, uniswap, injective, circle, turnkey, oplabs, compound, consensys, 0x, dune, jump, magiceden, layerzerolabs, quicknode, aptosfoundation,
+               # more companies, each verified to have tech roles open in India or remote (Nov 2026)
+               cerebras, plaid, lambda, baseten, vultr, ashby, nubank, sentry, 1password, fireworks,
+               docker, clickup, workos, delinea, perplexity, hostinger, iterable, gainsight, aleph,
+               fullstory, midjourney, runway, hightouch, neon, velocity, temporal, render, camunda,
+               hex, sophos, sanity, strava, webflow, drata, astronomer, quora, railway, patreon,
+               secureframe, cube, paddle, prefect, motherduck, substack, buffer, materialize,
+               lightdash, datafold, bubble, spotdraft]
   # Company career sites on SmartRecruiters. Verified to have India openings (Nov 2026). Their application pages
   # are protected against automated browsers, so these jobs arrive as "apply yourself" packets.
   smartrecruiters: [Swiggy, Freshworks, ServiceNow, BoschGroup, Experian, NielsenIQ, Wise, Endava, WesternDigital, Canva]
