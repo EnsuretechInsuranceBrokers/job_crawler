@@ -46,3 +46,27 @@ def test_login_pages():
     pages = login_pages({"workday": ["nvidia/wd5/NVIDIAExternalCareerSite"], "amazon": True, "google": True})
     assert pages[0] == workday_home("nvidia/wd5/NVIDIAExternalCareerSite") == "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"
     assert any("amazon.jobs" in p for p in pages) and any("google.com" in p for p in pages)
+
+
+def test_one_window_is_reused_and_extra_tabs_closed(browser):
+    from jobbot.browser import work_page
+    ctx = browser.new_context()
+    first = ctx.new_page()
+    ctx.new_page()                      # e.g. a site's Apply button opened a new tab
+    assert work_page(ctx) is first and len(ctx.pages) == 1
+    assert work_page(ctx) is first      # the next job reuses it rather than opening a window
+    ctx.close()
+
+
+def test_saved_profile_keeps_sign_in_cookies_between_runs(tmp_path, browser):
+    import glob
+    import os
+    exe = os.environ.get("JOBBOT_CHROMIUM") or (glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome") or [None])[0]
+    cookie = {"name": "sid", "value": "x", "domain": "example.com", "path": "/", "expires": 4102444800}
+    chromium = browser.browser_type
+    ctx = chromium.launch_persistent_context(str(tmp_path), executable_path=exe)
+    ctx.add_cookies([cookie])
+    ctx.close()
+    ctx = chromium.launch_persistent_context(str(tmp_path), executable_path=exe)   # a later run
+    assert any(c["name"] == "sid" for c in ctx.cookies("https://example.com"))
+    ctx.close()

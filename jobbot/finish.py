@@ -105,8 +105,9 @@ def main(argv=None):
     name = re.sub(r"\W+", "_", profile["name"]).strip("_")
     done = 0
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False, executable_path=os.environ.get("JOBBOT_CHROMIUM") or None)
-        context = browser.new_context(locale="en-US", viewport=None)
+        from .browser import open_profile, renderer, work_page
+        context = open_profile(pw)            # your saved sign-ins (~/.jobbot/browser), kept between jobs and runs
+        browser = renderer(pw)                # invisible: only turns resumes and letters into PDFs
         for n, (key, rec) in enumerate(rows, 1):
             job = job_from_record(key, rec, live)
             print(f"\n[{n}/{len(rows)}] {rec['title']} - {rec['company']}  (stopped: {rec['status']})")
@@ -120,12 +121,11 @@ def main(argv=None):
             pdf = render_resume(browser, profile, tailored, job, os.path.join(job_dir, f"{name}_Resume.pdf"))
             letter, _ = cover_letter(profile, tailored, job, llm)
             letter_pdf = render_letter_pdf(browser, tailored, letter, os.path.join(job_dir, f"{name}_Cover_Letter.pdf"))
-            page = context.new_page()
+            page = work_page(context)            # same window every job: nothing is closed, no sign-in is lost
             try:
                 filler, open_questions = fill_form(page, apply_url(job), job, profile, pdf, acfg, llm, (letter_pdf, letter))
             except Exception as e:  # noqa: BLE001
                 print(f"    Could not open the form ({type(e).__name__}); skipping.")
-                page.close()
                 continue
             print(f"    Filled {filler.filled} fields. The browser window is yours now:")
             for q in open_questions:
@@ -147,14 +147,11 @@ def main(argv=None):
                 print("    Recorded as submitted" + ("" if confirmed else " (no confirmation text was visible - check your inbox)") + ".")
             elif answer == "x":
                 rec.update(status="dismissed", ts=int(time.time()))
-            try:
-                page.close()
-            except Exception:  # noqa: BLE001
-                pass
             state.save()
             if answer == "q":
                 break
         browser.close()
+        context.close()
     state.save()
     if not args.no_sync:
         print("\nSaving the bot's memory..." + (" done." if sync_up() else " FAILED - run again later so the bot does not redo these."))

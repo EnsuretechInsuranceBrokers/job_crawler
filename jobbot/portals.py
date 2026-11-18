@@ -28,7 +28,7 @@ import urllib.parse
 from .config import ROOT
 from .models import Job
 
-PROFILE_DIR = os.path.expanduser(os.environ.get("JOBBOT_BROWSER_PROFILE", "~/.jobbot/browser"))
+from .browser import PROFILE_DIR, open_profile, renderer as make_renderer, work_page  # noqa: F401
 PACE_SECONDS = 25            # pause between applications: stay a polite, human-rate user of the site
 
 APPLIED = re.compile(r"applied successfully|successfully applied|application (has been )?(sent|submitted)|"
@@ -328,11 +328,9 @@ def main(argv=None):
 
     done, tally = 0, {}
     with sync_playwright() as pw:
-        context = pw.chromium.launch_persistent_context(
-            PROFILE_DIR, headless=False, viewport=None, locale="en-IN",
-            executable_path=os.environ.get("JOBBOT_CHROMIUM") or None)
-        renderer = pw.chromium.launch(executable_path=os.environ.get("JOBBOT_CHROMIUM") or None)  # resume PDFs
-        page = context.pages[0] if context.pages else context.new_page()
+        context = open_profile(pw)
+        renderer = make_renderer(pw)  # resume PDFs
+        page = work_page(context)
         home = "https://www.naukri.com/nlogin/login" if args.site == "naukri" else "https://internshala.com/login/user"
         page.goto(home, wait_until="domcontentloaded", timeout=45000)
         input("Log in in the browser window if it asks (skip if you are already logged in), then press Enter here... ")

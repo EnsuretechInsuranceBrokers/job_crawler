@@ -24,7 +24,7 @@ import time
 
 from .config import ROOT
 
-PROFILE_DIR = os.path.expanduser(os.environ.get("JOBBOT_BROWSER_PROFILE", "~/.jobbot/browser"))
+from .browser import PROFILE_DIR, open_profile, renderer as make_renderer, work_page  # noqa: F401
 SOURCES = ("workday", "amazon", "microsoft", "google", "apple", "smartrecruiters")
 
 # Per site: where to sign in, and the buttons that lead from the posting into the application.
@@ -205,9 +205,7 @@ def main(argv=None):
     only = [s.strip() for s in args.only.split(",") if s.strip()] or list(SOURCES)
     scfg = {k: v for k, v in cfg["sources"].items() if k in only}
     with sync_playwright() as pw:
-        context = pw.chromium.launch_persistent_context(
-            PROFILE_DIR, headless=False, viewport=None, locale="en-IN",
-            executable_path=os.environ.get("JOBBOT_CHROMIUM") or None)
+        context = open_profile(pw)
         if args.command == "login":
             for url in login_pages(scfg):
                 p = context.new_page()
@@ -258,8 +256,8 @@ def _apply(context, pw, cfg, scfg, profile, args):
     print(f"{len(picks)} matching posting(s); applying to {len(chosen)}.")
     out_dir = os.path.join(ROOT, "out", "careers")
     name = re.sub(r"\W+", "_", profile["name"]).strip("_")
-    renderer = pw.chromium.launch(executable_path=os.environ.get("JOBBOT_CHROMIUM") or None)
-    page = context.pages[0] if context.pages else context.new_page()
+    renderer = make_renderer(pw)
+    page = work_page(context)
     tally = {}
     for n, job in enumerate(chosen, 1):
         print(f"\n[{n}/{len(chosen)}] {job.title} - {job.company} ({job.location})")
