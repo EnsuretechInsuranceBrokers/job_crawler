@@ -33,21 +33,28 @@ flowchart LR
 2. **Match** – job title must contain one of your target titles, location must
    fit, then jobs are ranked by overlap with your skills. Jobs handled before
    (or the same role in another city) are skipped.
-3. **Tailor** – reorders your skills and picks the most relevant bullets for
+3. **Resume** – if the profile has `resume_tex` (your own LaTeX resume, kept
+   encrypted), the only tailoring is bold: between `% JOBBOT-SKILLS-BEGIN` and
+   `% JOBBOT-SKILLS-END` the skills this posting mentions are bolded instead of
+   your usual emphasis, and matching technologies in your bullets are bolded too.
+   Nothing is added or reworded; if bolding would push it past one page the
+   original is used. Without `resume_tex`, or if LaTeX fails, the HTML resume
+   below is used.
+4. **Tailor** – reorders your skills and picks the most relevant bullets for
    each job, and rewrites the two-line summary. It can only *select and reorder
    what is already in your profile*; a summary that mentions anything your
    profile lacks is thrown away. Works by keyword matching out of the box, and
    with an AI model if you add a free API key (below).
-4. **Cover letter** – written per job under the same rule (facts from your
+5. **Cover letter** – written per job under the same rule (facts from your
    profile only; anything else falls back to a plain template), as PDF and text.
-5. **Apply** – opens the Greenhouse/Lever/Ashby form in headless Chromium, fills
+6. **Apply** – opens the Greenhouse/Lever/Ashby form in headless Chromium, fills
    it from your profile and your `answers`, uploads the tailored resume and
    cover letter and submits – but only if every required question has an answer.
-6. **Remember** – every handled job is recorded (encrypted) so it is not applied
+7. **Remember** – every handled job is recorded (encrypted) so it is not applied
    to twice within `reapply_after_days`; multiple-choice answers the AI gave are
    reused so the same question always gets the same answer; questions that stop
    forms are counted so the report can tell you which one to teach it next.
-7. **Notify** – a phone alert (Telegram, ntfy or WhatsApp) the moment a form
+8. **Notify** – a phone alert (Telegram, ntfy or WhatsApp) the moment a form
    needs you (CAPTCHA, verification code), a daily log after every run, an encrypted zip
    (workflow artifact) and, optionally, an email with the PDFs attached.
 

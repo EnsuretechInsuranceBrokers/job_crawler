@@ -771,3 +771,48 @@ def test_expected_salary_per_job(profile):
 
     assert answers_for(estimate(us, profile, US()), "Desired salary", "text")[0] == "$151,000 per year"
     assert estimate(Job("g", "4", "Acme", "SWE", "Pune", "u", ""), profile, None) is None   # nothing to go on: left for you
+
+
+TEX = r"""\documentclass{moderncv}
+\moderncvstyle{banking}
+\begin{document}
+% JOBBOT-SKILLS-BEGIN
+\cvitem[0em]{\skilllabel{Languages}}{\textbf{PHP, Python}, Go, C++, Q\#}
+\cvitem[0em]{\skilllabel{Databases}}{\textbf{MySQL}, Postgres, Redis, AWS (EC2, S3)}
+% JOBBOT-SKILLS-END
+\cventry{2026}{Dev}{Co}{}{}{
+\begin{itemize}
+    \item Built \textbf{RESTful APIs} in \textit{PHP/Laravel} with Redis caching and Kafka queues; see \href{https://x.y/Kafka}{site}.
+\end{itemize}}
+\end{document}
+"""
+
+
+def test_latex_bolds_only_what_the_job_asks_for(profile):
+    from jobbot.latex import tailor_tex
+    job = Job("g", "1", "Acme", "Backend Engineer", "Pune", "u", "Go, PostgreSQL, Redis and Kafka on AWS.")
+    profile["skills"] = ["Go", "Redis", "Kafka", "PHP"]
+    out, hits = tailor_tex(TEX, job, profile)
+    skills = out.split("% JOBBOT-SKILLS-BEGIN")[1].split("% JOBBOT-SKILLS-END")[0]
+    assert "PHP, Python" in skills and r"\textbf{PHP" not in skills          # the generic emphasis is replaced
+    assert r"\textbf{Go}" in skills and r"\textbf{Postgres}" in skills and r"\textbf{Redis}" in skills
+    assert r"\textbf{AWS (EC2, S3)}" in skills and r"Q\#" in skills
+    bullet = [l for l in out.splitlines() if r"\item" in l][0]
+    assert r"\textbf{RESTful APIs}" in bullet                              # the user's own emphasis stays
+    assert r"\textbf{Redis}" in bullet and r"\textbf{Kafka}" in bullet
+    assert r"\href{https://x.y/Kafka}{site}" in bullet                     # never inside commands
+    assert r"\textit{PHP/Laravel}" in bullet
+    # nothing is added or removed besides bold markers
+    strip = lambda t: t.replace(r"\textbf{", "").replace("}", "")
+    assert strip(out) == strip(TEX)
+
+
+def test_latex_compiles_when_available(tmp_path, profile):
+    import shutil
+
+    from jobbot.latex import compile_pdf
+    if not shutil.which("pdflatex"):
+        pytest.skip("LaTeX not installed")
+    doc = r"\documentclass{article}\begin{document}Hello \textbf{Go}\end{document}"
+    assert compile_pdf(doc, str(tmp_path / "r.pdf")) == 1 and (tmp_path / "r.pdf").read_bytes()[:5] == b"%PDF-"
+    assert compile_pdf(r"\documentclass{article}\begin{document}\undefinedcommand\end{document}", str(tmp_path / "x.pdf")) == 0

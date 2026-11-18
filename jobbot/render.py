@@ -12,6 +12,15 @@ def render_html(profile):
     return _env.get_template("resume.html.j2").render(p=profile)
 
 
+def render_resume(browser, profile, tailored, job, path):
+    """The user's LaTeX resume with job-relevant terms in bold when available, else the HTML template."""
+    if profile.get("resume_tex"):
+        from .latex import render
+        if render(profile, job, path) is not None:
+            return path
+    return render_pdf(browser, tailored, path)
+
+
 def render_letter_pdf(browser, profile, text, path):
     paragraphs = [x.strip() for x in text.split("\n\n") if x.strip()]
     html = _env.get_template("letter.html.j2").render(p=profile, paragraphs=paragraphs)

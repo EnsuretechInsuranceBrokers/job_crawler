@@ -24,7 +24,7 @@ def run(args):
     from .llm import make_llm
     from .match import select
     from .models import Outcome
-    from .render import render_letter_pdf, render_pdf
+    from .render import render_letter_pdf, render_resume
     from .sources import crawl
     from .state import State
     from .tailor import tailor
@@ -110,7 +110,7 @@ def run(args):
                 tailored, used_llm = tailor(profile, job, ai)
                 job_dir = os.path.join(out_dir, f"{n:02d}_" + re.sub(r"\W+", "_", job.company)[:30])
                 os.makedirs(job_dir, exist_ok=True)
-                pdf = render_pdf(browser, tailored, os.path.join(job_dir, file_name))
+                pdf = render_resume(browser, profile, tailored, job, os.path.join(job_dir, file_name))
                 letter, _ = cover_letter(profile, tailored, job, ai)
                 with open(os.path.join(job_dir, "cover_letter.txt"), "w") as f:
                     f.write(letter)

@@ -80,7 +80,7 @@ def main(argv=None):
     from .config import load_config, load_profile
     from .cover import cover_letter
     from .llm import make_llm
-    from .render import render_letter_pdf, render_pdf
+    from .render import render_letter_pdf, render_resume
     from .sources import crawl
     from .state import State
     from .tailor import tailor
@@ -117,7 +117,7 @@ def main(argv=None):
             job_dir = os.path.join(out_dir, f"{n:02d}_" + re.sub(r"\W+", "_", job.company)[:30])
             os.makedirs(job_dir, exist_ok=True)
             tailored, _ = tailor(profile, job, llm)
-            pdf = render_pdf(browser, tailored, os.path.join(job_dir, f"{name}_Resume.pdf"))
+            pdf = render_resume(browser, profile, tailored, job, os.path.join(job_dir, f"{name}_Resume.pdf"))
             letter, _ = cover_letter(profile, tailored, job, llm)
             letter_pdf = render_letter_pdf(browser, tailored, letter, os.path.join(job_dir, f"{name}_Cover_Letter.pdf"))
             page = context.new_page()

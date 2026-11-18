@@ -61,6 +61,22 @@ jobs:
           pip install -q -r requirements.txt
           playwright install chromium   # runner image already has the system libraries; no apt needed
 
+      - name: Install LaTeX (resume)
+        # The resume is the user's own LaTeX; if this step fails the bot falls back to its HTML resume.
+        if: steps.setup.outputs.ready
+        continue-on-error: true
+        timeout-minutes: 8
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            texlive-latex-extra texlive-latex-recommended texlive-fonts-recommended lmodern > /dev/null
+          # Font Awesome 5 (the header icons) alone, instead of the 600 MB texlive-fonts-extra
+          mkdir -p "$HOME/texmf" && cd "$HOME/texmf"
+          curl -fsSL --retry 3 -o fa5.zip https://mirrors.ctan.org/install/fonts/fontawesome5.tds.zip
+          unzip -qo fa5.zip && rm fa5.zip
+          updmap-user --enable Map=fontawesome5.map > /dev/null 2>&1 || true
+          kpsewhich fontawesome5.sty
+
       - name: Restore encrypted state
         if: steps.setup.outputs.ready
         run: |
