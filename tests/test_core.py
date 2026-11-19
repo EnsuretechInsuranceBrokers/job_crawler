@@ -955,3 +955,12 @@ def test_wrapped_date_picker_gets_its_real_label(browser):
     f = page.evaluate(SCAN_JS)[0]
     assert f["label"] == "When can you start a new role?" and f["date"] == "us"
     page.close()
+
+
+def test_previews_do_not_spend_the_ai_quota(monkeypatch):
+    from jobbot.llm import make_llm
+    profile = {"llm": {"provider": "openrouter", "api_key": "k", "model": "m"}}
+    monkeypatch.setenv("JOBBOT_LLM", "off")
+    assert not make_llm({"enabled": True}, profile).enabled
+    monkeypatch.delenv("JOBBOT_LLM")
+    assert make_llm({"enabled": True}, profile).enabled

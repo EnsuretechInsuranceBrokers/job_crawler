@@ -7,6 +7,7 @@ Model names change often, so unless `model` is given the client asks the provide
 which models exist and picks a suitable one.
 """
 import json
+import os
 import re
 import time
 
@@ -213,6 +214,10 @@ class Chain:
 
 
 def make_llm(cfg, profile):
+    if os.environ.get("JOBBOT_LLM", "").lower() == "off":
+        # Pull-request previews: free AI tiers have a small DAILY quota, and a preview per push
+        # used it up before the real run (18 Nov: 0 of 99 jobs got AI help). Previews test forms, not the AI.
+        return LLM(dict(cfg, enabled=False), profile)
     return Chain(cfg, profile) if isinstance((profile or {}).get("llm"), list) else LLM(cfg, profile)
 
 

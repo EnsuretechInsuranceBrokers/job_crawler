@@ -102,6 +102,8 @@ jobs:
         if: steps.setup.outputs.ready
         env:
           JOBBOT_DRY_RUN: ${{ (inputs.dry_run || github.event_name == 'pull_request') && '1' || '' }}
+          # previews must not spend the AI provider's daily quota that the real runs need
+          JOBBOT_LLM: ${{ github.event_name == 'pull_request' && 'off' || '' }}
         run: python -m jobbot ${{ github.event_name == 'pull_request' && '--limit 12' || '' }}
 
       - name: Save encrypted state
