@@ -24,7 +24,9 @@ permissions:
   issues: write     # post the daily log / alerts to the "jobbot inbox" issue (GitHub emails them)
 
 concurrency:
-  group: jobbot
+  # Real runs queue behind each other (one shared daily quota). PR previews get their own queue:
+  # GitHub keeps one pending run per group, so a preview could otherwise replace a waiting real run.
+  group: ${{ github.event_name == 'pull_request' && format('jobbot-preview-{0}', github.ref) || 'jobbot' }}
   cancel-in-progress: false
 
 jobs:
