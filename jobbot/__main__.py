@@ -11,7 +11,7 @@ from .util import detail, log
 
 # Bump when the form engine learns to get past something it used to stop on, so applications
 # that stopped for that reason are tried again instead of waiting out the re-apply window.
-FORM_ENGINE = 2
+FORM_ENGINE = 3  # bump when form filling improves: forms that stopped on a question are retried
 
 
 def run(args):

@@ -75,6 +75,35 @@ def _nice(v, currency):
     return int(round(v / step) * step)
 
 
+# Typical base pay for a software engineer with about 3 years' experience, used only when the
+# posting gives no range and the AI is not answering. Deliberately mid-market, not top-of-band:
+# an expectation far above a company's band gets an application filtered out.
+US_STATES = ("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA "
+             "RI SC SD TN TX UT VT VA WA WV WI WY DC").split()
+FALLBACK = [  # checked in order: specific countries before the United States
+    (r"india|bengaluru|bangalore|mumbai|pune|hyderabad|gurgaon|gurugram|noida|delhi|chennai|kolkata|ahmedabad", "INR", 1_800_000),
+    (r"united kingdom|\buk\b|london|manchester|edinburgh|england|scotland", "GBP", 60_000),
+    (r"canada|toronto|vancouver|montreal|ontario", "CAD", 100_000),
+    (r"singapore", "SGD", 85_000),
+    (r"australia|sydney|melbourne", "AUD", 115_000),
+    (r"germany|berlin|munich|netherlands|amsterdam|france|paris|spain|madrid|ireland|dublin|europe|\beu\b|poland|portugal|lisbon", "EUR", 60_000),
+    (r"japan|tokyo", "JPY", 7_000_000),
+    (r"uae|dubai|abu dhabi", "AED", 240_000),
+    (r"united states|\busa?\b|new york|san francisco|seattle|austin|boston|chicago|los angeles|remote.{0,5}us\b", "USD", 125_000),
+]
+
+
+def fallback_market(job):
+    """(currency, typical base) for the job's location, from FALLBACK; India when the place is unclear."""
+    loc = f"{job.location}"
+    for pattern, cur, amount in FALLBACK:
+        if re.search(pattern, loc, re.I):
+            return cur, amount
+    if any(re.search(rf"(,|\s){st}\b", loc) for st in US_STATES):  # "Austin, TX" (case-sensitive: not ", uk")
+        return "USD", 125_000
+    return ("USD", 100_000) if re.search(r"remote|anywhere|worldwide|global", loc, re.I) else ("INR", 1_800_000)
+
+
 def estimate(job, profile, llm=None, cache=None):
     """{"currency", "amount" (annual), "basis"} for this job, or None."""
     cache = cache if cache is not None else {}
@@ -99,6 +128,9 @@ def estimate(job, profile, llm=None, cache=None):
                 result = {"currency": cur, "market": med, "basis": str(reply.get("basis", ""))[:160]}
         except (TypeError, KeyError, ValueError):
             pass
+    if result is None:
+        cur, market = fallback_market(job)
+        result = {"currency": cur, "market": market, "basis": "built-in typical pay for ~3 years (AI unavailable)"}
     if result:
         amount = result["market"] * (1 + premium)
         cur_lpa = cfg.get("current_lpa")
@@ -106,7 +138,8 @@ def estimate(job, profile, llm=None, cache=None):
             amount = max(amount, float(cur_lpa) * LAKH * 1.2)
         result["amount"] = _nice(amount, result["currency"])
         detail(f"expected salary for {job.company}: {result['currency']} {result['amount']:,} ({result['basis']})")
-    cache[key] = result
+    if "built-in" not in result["basis"]:
+        cache[key] = result
     return result
 
 

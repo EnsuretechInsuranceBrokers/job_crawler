@@ -770,7 +770,12 @@ def test_expected_salary_per_job(profile):
             return {"currency": "USD", "median": 140000}
 
     assert answers_for(estimate(us, profile, US()), "Desired salary", "text")[0] == "$151,000 per year"
-    assert estimate(Job("g", "4", "Acme", "SWE", "Pune", "u", ""), profile, None) is None   # nothing to go on: left for you
+    # no range and no AI: a built-in typical figure for the place (here India), never left blank
+    pune = estimate(Job("g", "4", "Acme", "SWE", "Pune", "u", ""), profile, None, cache)
+    assert pune["currency"] == "INR" and pune["amount"] == 1_950_000 and "built-in" in pune["basis"]
+    assert estimate(Job("g", "5", "Acme", "SWE", "London, UK", "u", ""), profile, None)["currency"] == "GBP"
+    assert estimate(Job("g", "6", "Acme", "SWE", "Austin, TX", "u", ""), profile, None)["currency"] == "USD"
+    assert "Acme|SWE|Pune" not in cache        # the fallback is not cached: the AI's figure wins once it is back
 
 
 TEX = r"""\documentclass{moderncv}
@@ -901,3 +906,96 @@ def test_mobile_engineering_is_not_a_phone_question(profile):
 def test_target_compensation_counts_as_expected_salary():
     from jobbot.salary import is_expected_salary
     assert is_expected_salary("What is your target base and bonus compensation for the role?")
+
+
+def test_at_least_years_is_a_yes_no(profile):
+    profile = dict(profile, answers={"years of .*experience": "3"})
+    assert rule_answer("Do you have at least 3 years of full time relevant working experience?", profile) == "Yes"
+    assert rule_answer("Do you have at least 5 years of experience?", profile) == "No"
+    assert rule_answer("Please email me about future job openings", profile) is None   # not the email address
+    assert rule_answer("Email address", profile) == profile["email"]
+
+
+def test_dropdown_tries_every_acceptable_answer_before_typing(browser):
+    """A react-select menu: the first acceptable answer is not listed, a later one is."""
+    from jobbot.apply import FormFiller
+    page = browser.new_page()
+    page.set_content("""<label for=v>Veteran status *</label>
+      <input id=v role=combobox aria-expanded=false required onclick="m.hidden=false" oninput="m.hidden=true">
+      <div id=m hidden><div role=option onclick="v.value=this.textContent;m.hidden=true">Active Reserve</div>
+      <div role=option onclick="v.value=this.textContent;m.hidden=true">No military service</div></div>""")
+    f = {"jb": "x", "label": "Veteran status", "kind": "combobox", "required": True}
+    page.evaluate("document.getElementById('v').setAttribute('data-jb', 'x')")
+    filler = FormFiller(page, {"name": "A", "email": "a@b.c"}, None, None, {})
+    assert filler._combobox(f, ["I am not a protected veteran", "I am not a veteran", "No"])
+    assert page.input_value("#v") == "No military service" and f["chosen"] == "No"
+    page.close()
+
+
+def test_date_fields_and_negative_sentence_options():
+    import datetime
+    from jobbot.apply import date_answer
+    t = datetime.date(2026, 11, 19)
+    assert date_answer("2 weeks", t) == datetime.date(2026, 12, 3)
+    assert date_answer("Currently employed; available 2 weeks after an offer", t) == datetime.date(2026, 12, 3)
+    assert date_answer("2026-12-05", t) == datetime.date(2026, 12, 5) and date_answer("soon", t) is None
+    never = [{"text": "I have never been employed by Acme"}, {"text": "I am currently an employee"},
+             {"text": "I was previously a contractor"}]
+    assert pick_option("No", never) == 0
+    assert pick_option("No", [{"text": "Not yet"}, {"text": "Not applicable"}]) is None   # ambiguous: not guessed
+
+
+def test_wrapped_date_picker_gets_its_real_label(browser):
+    """Ashby: the label points at a wrapper div, the input inside has no id."""
+    from jobbot.apply import SCAN_JS
+    page = browser.new_page()
+    page.set_content("""<div class="ashby-application-form-field-entry"><label for="w1">When can you start a new role?</label>
+      <div id="w1"><div class="react-datepicker-wrapper"><div class="react-datepicker__input-container">
+      <input type="text" placeholder="Pick date..." class="ashby-application-form-input-date" required></div></div></div></div>""")
+    f = page.evaluate(SCAN_JS)[0]
+    assert f["label"] == "When can you start a new role?" and f["date"] == "us"
+    page.close()
+
+
+def test_previews_do_not_spend_the_ai_quota(monkeypatch):
+    from jobbot.llm import make_llm
+    profile = {"llm": {"provider": "openrouter", "api_key": "k", "model": "m"}}
+    monkeypatch.setenv("JOBBOT_LLM", "off")
+    assert not make_llm({"enabled": True}, profile).enabled
+    monkeypatch.delenv("JOBBOT_LLM")
+    assert make_llm({"enabled": True}, profile).enabled
+
+
+def test_age_question_is_not_an_experience_question(profile):
+    profile = dict(profile, answers={"years of .*experience": "3", "over the age of 18|at least 18|18 years": "Yes"})
+    assert rule_answer("Are you at least 18 years of age?", profile) == "Yes"
+    assert rule_answer("Do you have at least 5 years of experience?", profile) == "No"
+
+
+def test_label_for_a_missing_id_only_when_it_is_the_one_control(browser):
+    from jobbot.apply import SCAN_JS
+    page = browser.new_page()
+    page.set_content("""<div class=entry><label for="_systemfield_location">Location</label>
+      <div><input role=combobox placeholder="Start typing..."></div></div>
+      <div class=pane><label for="_gone">Location</label><input type=file><input type=text placeholder="Other"></div>""")
+    labels = [f["label"] for f in page.evaluate(SCAN_JS)]
+    assert labels[0] == "Location" and "Location" not in labels[1:]
+    page.close()
+
+
+def test_consent_takes_the_single_agreement_option():
+    assert pick_option("consent", [{"text": "I will read the arbitration agreement before submitting"}]) == 0
+    assert pick_option("consent", [{"text": "Select..."}, {"text": "I have read and acknowledge the policy"}]) == 1
+    assert pick_option("consent", [{"text": "I do not agree"}]) is None
+
+
+def test_hidden_checkbox_in_a_yes_no_pair_is_not_a_question(browser):
+    """Ashby: <div><button>Yes</button><button>No</button><input type=checkbox hidden-ish></div>"""
+    from jobbot.apply import SCAN_JS
+    page = browser.new_page()
+    page.set_content("""<div><label>Are you a former employee? *</label>
+      <div><button class="_option_ _active_x">No</button><button class="_option_">Yes</button>
+      <input type=checkbox style="width:1px;height:1px" required></div></div>""")
+    fields = page.evaluate(SCAN_JS)
+    assert [f["kind"] for f in fields] == ["buttons"] and fields[0]["filled"]
+    page.close()

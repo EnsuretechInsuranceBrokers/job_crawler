@@ -67,8 +67,15 @@ SCAN_JS = r"""
     let p = el.parentElement;
     for (let i = 0; i < 4 && p; i++, p = p.parentElement) {
       // never borrow a label that belongs to a different control
+      // (a label "for" a wrapper that contains this control - Ashby's date pickers - is its label)
+      // (a label "for" an id that does not exist - Ashby's location - is borrowed only when this is
+      //  the one control around it; otherwise a hidden upload input nearby would take it)
+      const forOther = x => { if (!x.htmlFor || x.htmlFor === el.id) return false;
+        const t = document.getElementById(x.htmlFor);
+        if (t) return !t.contains(el);
+        return p.querySelectorAll('input:not([type=hidden]), select, textarea').length > 1; };
       const l = [...p.querySelectorAll('label, legend, [class*="label" i]')].find(x => !x.contains(el) && clean(x.innerText)
-        && !(x.htmlFor && x.htmlFor !== el.id) && !x.querySelector('input, select, textarea'));
+        && !forOther(x) && !x.querySelector('input, select, textarea'));
       if (l) return l;
     }
     return null;
@@ -104,6 +111,10 @@ SCAN_JS = r"""
     const info = el.tagName.toLowerCase() + '[' + type + ']' + (el.getAttribute('role') ? '{' + el.getAttribute('role') + '}' : '')
       + '#' + (el.id || '') + '.' + String(el.className).slice(0, 40);
     if (type === 'radio' || type === 'checkbox') {
+      // Ashby keeps a hidden checkbox inside each Yes/No button pair: the buttons are the question.
+      // Treating it as its own question made a "No" look unanswered and ticked a "Yes" back off.
+      const sib = el.parentElement ? [...el.parentElement.children].filter(x => x.tagName === 'BUTTON' && /^(yes|no)$/i.test(clean(x.innerText))) : [];
+      if (sib.length === 2) continue;
       const lab = labelEl(el);
       if (!shown(el) && !shown(lab)) continue;
       const key = type + ':' + (el.name || tag(el));
@@ -131,6 +142,8 @@ SCAN_JS = r"""
       f.filled = !!el.value || !!(box && box.querySelector('[class*="single-value" i], [class*="multi-value" i]'));
     } else {
       f.kind = el.tagName === 'TEXTAREA' ? 'textarea' : 'text';
+      if (type === 'date' || /datepicker|input-date|date-input/i.test(String(el.className) + ' ' + (el.parentElement ? el.parentElement.className : '')))
+        f.date = type === 'date' ? 'iso' : 'us';
     }
     out.push(f);
   }
@@ -207,7 +220,8 @@ BUILTIN = [  # (regex on short label, profile -> answer); first match wins
     (r"last name|family name|surname", lambda p: " ".join(p["name"].split()[1:]) or p["name"]),
     (r"preferred name", lambda p: p["name"].split()[0]),
     (r"^(full |legal |your )*name\b", lambda p: p["name"]),
-    (r"e-?mail", lambda p: p["email"]),
+    # "Please email me about future openings" is a yes/no, not a request for the address
+    (r"^(?!.*(e-?mail me|send me|future|updates|newsletter|opt.?in|subscribe)).*e-?mail", lambda p: p["email"]),
     # "mobile" alone also appears in "experience in mobile engineering": only number-like labels
     (r"phone|telephone|contact (number|no)|mobile( (number|no\.?|phone))?\s*\*?\s*$|^\s*mobile\b(?!.*(engineer|develop|app|experience))",
      lambda p: p.get("phone")),
@@ -257,12 +271,32 @@ STRUCTURED = [
 IDENTITY = 6  # the first six built-ins: first / last / preferred / full name, email, phone
 
 
+AT_LEAST_YEARS = re.compile(r"\b(?:at least|minimum of|min\.?|more than|over)\s+(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\+?\s*(?:\+\s*)?years?", re.I)
+WORD_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+
+
+def experience_years(profile, job=None):
+    """Years of experience as a number, from the profile's own answer to that question."""
+    v = profile.get("years_experience")
+    if v is None:
+        v = rule_answer("How many years of experience do you have?", profile, job)
+    v = v[0] if isinstance(v, list) and v else v
+    m = re.search(r"\d+(?:\.\d+)?", str(v or ""))
+    return float(m.group()) if m else None
+
+
 def rule_answer(label, profile, job=None):
     """Answer from the user's `answers` map, then from built-in identity rules.
 
     A user answer may depend on where the job is: {"india|mumbai": "Yes", "default": "No"} -
     keys are regexes matched against the job location.
     """
+    m = AT_LEAST_YEARS.search(label)
+    if m and not re.search(r"\bage\b|\bold\b|of age|birth", label, re.I):  # "at least 18 years of age" is about age  # "Do you have at least 3 years of ...?" is a yes/no against the profile's experience
+        have = experience_years(profile, job)
+        if have is not None:
+            need = WORD_NUM.get(m.group(1).lower(), m.group(1))
+            return "Yes" if have >= float(need) else "No"
     for pattern, fn in STRUCTURED:
         if re.search(pattern, label, re.I):
             value = fn(profile)
@@ -360,7 +394,13 @@ def pick_option(answer, options):
     if a == "decline":
         return next((i for i, o in enumerate(options) if DECLINE.search(o["text"])), None)
     if a == "consent":  # internal token: the "I agree" style option
-        return next((i for i, o in enumerate(options) if AGREE.search(o["text"])), None)
+        hit = next((i for i, o in enumerate(options) if AGREE.search(o["text"])), None)
+        if hit is None:
+            # a single real option ("I will read the agreement", "I have read and acknowledge ...") is the agreement
+            real = [i for i, o in enumerate(options) if o["text"].strip() and not re.match(r"^\W*(select|choose|please select)\b", o["text"], re.I)]
+            if len(real) == 1 and not re.search(r"\b(no|not|decline|disagree|do not|don'?t)\b", options[real[0]]["text"], re.I):
+                hit = real[0]
+        return hit
     if a in SYNONYMS and a not in texts and SYNONYMS[a] in texts:
         a = SYNONYMS[a]
     try:
@@ -384,6 +424,11 @@ def pick_option(answer, options):
             return hits[0]
         if hits:
             return None  # ambiguous: do not guess
+    if a in ("no", "none"):
+        # "No" against sentences: "I have never been employed by X" is the one option that says no
+        neg = [i for i, t in enumerate(texts) if re.search(r"\b(never|not|no|none)\b", t) and not re.search(r"\byes\b", t)]
+        if len(neg) == 1:
+            return neg[0]
     # Last resort: one option clearly shares more meaningful words than any other
     # ("Company careers page" -> "Careers Website").
     def words(t):
@@ -392,6 +437,26 @@ def pick_option(answer, options):
     scores = [len(mine & words(t)) for t in texts]
     best = max(scores, default=0)
     return scores.index(best) if best and scores.count(best) == 1 else None
+
+
+def date_answer(answer, today=None):
+    """A calendar date for a date field: an actual date as is, "2 weeks" / "30 days" / "1 month"
+    counted from today, "immediately" as today. Anything else: None (not guessed)."""
+    import datetime
+    today = today or datetime.date.today()
+    a = norm(answer)
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d %B %Y", "%B %d %Y"):
+        try:
+            return datetime.datetime.strptime(answer.strip(), fmt).date()
+        except ValueError:
+            pass
+    if re.search(r"immediate|right away|asap", a):
+        return today
+    m = re.search(r"(\d+)\s*(day|week|month)", a)
+    if not m:
+        return None
+    n, unit = int(m.group(1)), m.group(2)
+    return today + datetime.timedelta(days=n * {"day": 1, "week": 7, "month": 30}[unit])
 
 
 def numeric_answer(answer, label):
@@ -476,7 +541,16 @@ class FormFiller:
             self.page.evaluate("jb => document.querySelector('[data-jb=\"' + jb + '\"]').click()", jb)
 
     def _combobox(self, f, answer):
-        """react-select style dropdown / autocomplete. Never raises: returns whether a value was chosen."""
+        """react-select style dropdown / autocomplete. Never raises: returns whether a value was chosen.
+
+        `answer` may be a list of acceptable answers: all of them are matched against the open
+        menu first, and only the first is typed as a search if none matches. (Typing one answer
+        and then the next leaves the menu filtered or closed, so later answers never saw the options.)
+        """
+        answers = [a for a in (answer if isinstance(answer, list) else [answer]) if a]
+        if not answers:
+            return False
+        answer = answers[0]
         box = self.loc(f["jb"])
         opts = self.page.locator('[role="option"]:visible')
         step = "open"
@@ -488,19 +562,24 @@ class FormFiller:
                 self.page.keyboard.press("ArrowDown")
             self.page.wait_for_timeout(400)
 
-            def choose():
+            def choose(candidates=None):
                 texts = [{"text": t} for t in opts.all_inner_texts()]
                 f["seen_options"] = [t["text"][:30] for t in texts[:8]]
-                i = pick_option(answer, texts)
-                if i is not None:
-                    opts.nth(i).click(timeout=4000)
-                    return True
+                pool = list(candidates or answers)
+                if not candidates:  # a fixed list of places: "Mumbai, Maharashtra, India" is listed as "India"
+                    pool += [part.strip() for a in answers if "," in a for part in reversed(a.split(",")) if part.strip()]
+                for a in pool:
+                    i = pick_option(a, texts)
+                    if i is not None:
+                        f["chosen"] = a
+                        opts.nth(i).click(timeout=4000)
+                        return True
                 return False
 
             step = "choose"
             if choose():
                 return True
-            if norm(answer) in ("decline", "consent"):
+            if all(norm(a) in ("decline", "consent") for a in answers):
                 self.page.keyboard.press("Escape")
                 return False
             # Autocomplete (city, school, ...): type, wait for suggestions, take the best one.
@@ -516,7 +595,7 @@ class FormFiller:
                         break
                 if opts.count():
                     step = "pick suggestion"
-                    if not choose():
+                    if not choose([answer]):
                         opts.first.click(timeout=4000)
                     return True
             step = "close"
@@ -533,7 +612,8 @@ class FormFiller:
     def put(self, f, answer):
         """Enter one answer. Returns True when the field was actually filled."""
         ok = self._put(f, answer)
-        if ok and f["required"] and MUST_BE_THERE.search(f["label"]) and re.match(r"no\b", norm(answer)):
+        chosen = f.get("chosen") or (answer[0] if isinstance(answer, list) else answer)
+        if ok and f["required"] and MUST_BE_THERE.search(f["label"]) and re.match(r"no\b", norm(chosen)):
             self.ineligible = f["label"]
         return ok
 
@@ -542,6 +622,14 @@ class FormFiller:
         if kind in ("text", "textarea"):
             if norm(answer) in ("decline", "consent"):
                 return False
+            if f.get("date"):
+                when = date_answer(answer)
+                if when is None:
+                    return False
+                box = self.loc(f["jb"])
+                box.fill(when.strftime("%Y-%m-%d" if f["date"] == "iso" else "%m/%d/%Y"), timeout=5000)
+                box.press("Enter")  # closes the picker and commits the typed date
+                return True
             if f.get("info", "").startswith("input[number]"):
                 answer = numeric_answer(answer, f["label"])
                 if answer is None:
@@ -587,7 +675,10 @@ class FormFiller:
                 kind = "number" if f.get("info", "").startswith("input[number]") else f["kind"]
                 a = answers_for(estimate(self.job, self.profile, self.llm, self.cfg.setdefault("salary_cache", {})),
                                 f["label"], kind) or None
-        for candidate in ([a] if isinstance(a, str) else a or []):
+        candidates = [a] if isinstance(a, str) else list(a or [])
+        if f["kind"] == "combobox" and len(candidates) > 1:
+            candidates = [candidates]  # one pass over the open menu with every acceptable answer
+        for candidate in candidates:
             if self.put(f, candidate):
                 return True
         if a:
