@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - id: meta
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
       - name: Wait for the tests, then merge
         if: steps.meta.outputs.update-type != 'version-update:semver-major'
         env:
