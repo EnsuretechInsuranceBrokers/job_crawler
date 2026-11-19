@@ -48,7 +48,7 @@ jobs:
             echo "ready=1" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.setup.outputs.ready
 
       - uses: actions/setup-python@v7
