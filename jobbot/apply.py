@@ -207,7 +207,8 @@ BUILTIN = [  # (regex on short label, profile -> answer); first match wins
     (r"last name|family name|surname", lambda p: " ".join(p["name"].split()[1:]) or p["name"]),
     (r"preferred name", lambda p: p["name"].split()[0]),
     (r"^(full |legal |your )*name\b", lambda p: p["name"]),
-    (r"e-?mail", lambda p: p["email"]),
+    # "Please email me about future openings" is a yes/no, not a request for the address
+    (r"^(?!.*(e-?mail me|send me|future|updates|newsletter|opt.?in|subscribe)).*e-?mail", lambda p: p["email"]),
     # "mobile" alone also appears in "experience in mobile engineering": only number-like labels
     (r"phone|telephone|contact (number|no)|mobile( (number|no\.?|phone))?\s*\*?\s*$|^\s*mobile\b(?!.*(engineer|develop|app|experience))",
      lambda p: p.get("phone")),
@@ -257,12 +258,32 @@ STRUCTURED = [
 IDENTITY = 6  # the first six built-ins: first / last / preferred / full name, email, phone
 
 
+AT_LEAST_YEARS = re.compile(r"\b(?:at least|minimum of|min\.?|more than|over)\s+(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\+?\s*(?:\+\s*)?years?", re.I)
+WORD_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+
+
+def experience_years(profile, job=None):
+    """Years of experience as a number, from the profile's own answer to that question."""
+    v = profile.get("years_experience")
+    if v is None:
+        v = rule_answer("How many years of experience do you have?", profile, job)
+    v = v[0] if isinstance(v, list) and v else v
+    m = re.search(r"\d+(?:\.\d+)?", str(v or ""))
+    return float(m.group()) if m else None
+
+
 def rule_answer(label, profile, job=None):
     """Answer from the user's `answers` map, then from built-in identity rules.
 
     A user answer may depend on where the job is: {"india|mumbai": "Yes", "default": "No"} -
     keys are regexes matched against the job location.
     """
+    m = AT_LEAST_YEARS.search(label)
+    if m:  # "Do you have at least 3 years of ...?" is a yes/no against the profile's experience
+        have = experience_years(profile, job)
+        if have is not None:
+            need = WORD_NUM.get(m.group(1).lower(), m.group(1))
+            return "Yes" if have >= float(need) else "No"
     for pattern, fn in STRUCTURED:
         if re.search(pattern, label, re.I):
             value = fn(profile)
@@ -476,7 +497,16 @@ class FormFiller:
             self.page.evaluate("jb => document.querySelector('[data-jb=\"' + jb + '\"]').click()", jb)
 
     def _combobox(self, f, answer):
-        """react-select style dropdown / autocomplete. Never raises: returns whether a value was chosen."""
+        """react-select style dropdown / autocomplete. Never raises: returns whether a value was chosen.
+
+        `answer` may be a list of acceptable answers: all of them are matched against the open
+        menu first, and only the first is typed as a search if none matches. (Typing one answer
+        and then the next leaves the menu filtered or closed, so later answers never saw the options.)
+        """
+        answers = [a for a in (answer if isinstance(answer, list) else [answer]) if a]
+        if not answers:
+            return False
+        answer = answers[0]
         box = self.loc(f["jb"])
         opts = self.page.locator('[role="option"]:visible')
         step = "open"
@@ -488,19 +518,24 @@ class FormFiller:
                 self.page.keyboard.press("ArrowDown")
             self.page.wait_for_timeout(400)
 
-            def choose():
+            def choose(candidates=None):
                 texts = [{"text": t} for t in opts.all_inner_texts()]
                 f["seen_options"] = [t["text"][:30] for t in texts[:8]]
-                i = pick_option(answer, texts)
-                if i is not None:
-                    opts.nth(i).click(timeout=4000)
-                    return True
+                pool = list(candidates or answers)
+                if not candidates:  # a fixed list of places: "Mumbai, Maharashtra, India" is listed as "India"
+                    pool += [part.strip() for a in answers if "," in a for part in reversed(a.split(",")) if part.strip()]
+                for a in pool:
+                    i = pick_option(a, texts)
+                    if i is not None:
+                        f["chosen"] = a
+                        opts.nth(i).click(timeout=4000)
+                        return True
                 return False
 
             step = "choose"
             if choose():
                 return True
-            if norm(answer) in ("decline", "consent"):
+            if all(norm(a) in ("decline", "consent") for a in answers):
                 self.page.keyboard.press("Escape")
                 return False
             # Autocomplete (city, school, ...): type, wait for suggestions, take the best one.
@@ -516,7 +551,7 @@ class FormFiller:
                         break
                 if opts.count():
                     step = "pick suggestion"
-                    if not choose():
+                    if not choose([answer]):
                         opts.first.click(timeout=4000)
                     return True
             step = "close"
@@ -533,7 +568,8 @@ class FormFiller:
     def put(self, f, answer):
         """Enter one answer. Returns True when the field was actually filled."""
         ok = self._put(f, answer)
-        if ok and f["required"] and MUST_BE_THERE.search(f["label"]) and re.match(r"no\b", norm(answer)):
+        chosen = f.get("chosen") or (answer[0] if isinstance(answer, list) else answer)
+        if ok and f["required"] and MUST_BE_THERE.search(f["label"]) and re.match(r"no\b", norm(chosen)):
             self.ineligible = f["label"]
         return ok
 
@@ -587,7 +623,10 @@ class FormFiller:
                 kind = "number" if f.get("info", "").startswith("input[number]") else f["kind"]
                 a = answers_for(estimate(self.job, self.profile, self.llm, self.cfg.setdefault("salary_cache", {})),
                                 f["label"], kind) or None
-        for candidate in ([a] if isinstance(a, str) else a or []):
+        candidates = [a] if isinstance(a, str) else list(a or [])
+        if f["kind"] == "combobox" and len(candidates) > 1:
+            candidates = [candidates]  # one pass over the open menu with every acceptable answer
+        for candidate in candidates:
             if self.put(f, candidate):
                 return True
         if a:

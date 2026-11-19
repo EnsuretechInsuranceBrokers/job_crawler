@@ -770,7 +770,12 @@ def test_expected_salary_per_job(profile):
             return {"currency": "USD", "median": 140000}
 
     assert answers_for(estimate(us, profile, US()), "Desired salary", "text")[0] == "$151,000 per year"
-    assert estimate(Job("g", "4", "Acme", "SWE", "Pune", "u", ""), profile, None) is None   # nothing to go on: left for you
+    # no range and no AI: a built-in typical figure for the place (here India), never left blank
+    pune = estimate(Job("g", "4", "Acme", "SWE", "Pune", "u", ""), profile, None, cache)
+    assert pune["currency"] == "INR" and pune["amount"] == 1_950_000 and "built-in" in pune["basis"]
+    assert estimate(Job("g", "5", "Acme", "SWE", "London, UK", "u", ""), profile, None)["currency"] == "GBP"
+    assert estimate(Job("g", "6", "Acme", "SWE", "Austin, TX", "u", ""), profile, None)["currency"] == "USD"
+    assert "Acme|SWE|Pune" not in cache        # the fallback is not cached: the AI's figure wins once it is back
 
 
 TEX = r"""\documentclass{moderncv}
@@ -901,3 +906,27 @@ def test_mobile_engineering_is_not_a_phone_question(profile):
 def test_target_compensation_counts_as_expected_salary():
     from jobbot.salary import is_expected_salary
     assert is_expected_salary("What is your target base and bonus compensation for the role?")
+
+
+def test_at_least_years_is_a_yes_no(profile):
+    profile = dict(profile, answers={"years of .*experience": "3"})
+    assert rule_answer("Do you have at least 3 years of full time relevant working experience?", profile) == "Yes"
+    assert rule_answer("Do you have at least 5 years of experience?", profile) == "No"
+    assert rule_answer("Please email me about future job openings", profile) is None   # not the email address
+    assert rule_answer("Email address", profile) == profile["email"]
+
+
+def test_dropdown_tries_every_acceptable_answer_before_typing(browser):
+    """A react-select menu: the first acceptable answer is not listed, a later one is."""
+    from jobbot.apply import FormFiller
+    page = browser.new_page()
+    page.set_content("""<label for=v>Veteran status *</label>
+      <input id=v role=combobox aria-expanded=false required onclick="m.hidden=false" oninput="m.hidden=true">
+      <div id=m hidden><div role=option onclick="v.value=this.textContent;m.hidden=true">Active Reserve</div>
+      <div role=option onclick="v.value=this.textContent;m.hidden=true">No military service</div></div>""")
+    f = {"jb": "x", "label": "Veteran status", "kind": "combobox", "required": True}
+    page.evaluate("document.getElementById('v').setAttribute('data-jb', 'x')")
+    filler = FormFiller(page, {"name": "A", "email": "a@b.c"}, None, None, {})
+    assert filler._combobox(f, ["I am not a protected veteran", "I am not a veteran", "No"])
+    assert page.input_value("#v") == "No military service" and f["chosen"] == "No"
+    page.close()
