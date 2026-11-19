@@ -68,8 +68,12 @@ SCAN_JS = r"""
     for (let i = 0; i < 4 && p; i++, p = p.parentElement) {
       // never borrow a label that belongs to a different control
       // (a label "for" a wrapper that contains this control - Ashby's date pickers - is its label)
+      // (a label "for" an id that does not exist - Ashby's location - is borrowed only when this is
+      //  the one control around it; otherwise a hidden upload input nearby would take it)
       const forOther = x => { if (!x.htmlFor || x.htmlFor === el.id) return false;
-        const t = document.getElementById(x.htmlFor); return !!t && t !== el && !t.contains(el); };
+        const t = document.getElementById(x.htmlFor);
+        if (t) return !t.contains(el);
+        return p.querySelectorAll('input:not([type=hidden]), select, textarea').length > 1; };
       const l = [...p.querySelectorAll('label, legend, [class*="label" i]')].find(x => !x.contains(el) && clean(x.innerText)
         && !forOther(x) && !x.querySelector('input, select, textarea'));
       if (l) return l;
@@ -284,7 +288,7 @@ def rule_answer(label, profile, job=None):
     keys are regexes matched against the job location.
     """
     m = AT_LEAST_YEARS.search(label)
-    if m:  # "Do you have at least 3 years of ...?" is a yes/no against the profile's experience
+    if m and not re.search(r"\bage\b|\bold\b|of age|birth", label, re.I):  # "at least 18 years of age" is about age  # "Do you have at least 3 years of ...?" is a yes/no against the profile's experience
         have = experience_years(profile, job)
         if have is not None:
             need = WORD_NUM.get(m.group(1).lower(), m.group(1))

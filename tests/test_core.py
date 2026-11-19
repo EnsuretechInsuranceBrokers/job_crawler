@@ -964,3 +964,20 @@ def test_previews_do_not_spend_the_ai_quota(monkeypatch):
     assert not make_llm({"enabled": True}, profile).enabled
     monkeypatch.delenv("JOBBOT_LLM")
     assert make_llm({"enabled": True}, profile).enabled
+
+
+def test_age_question_is_not_an_experience_question(profile):
+    profile = dict(profile, answers={"years of .*experience": "3", "over the age of 18|at least 18|18 years": "Yes"})
+    assert rule_answer("Are you at least 18 years of age?", profile) == "Yes"
+    assert rule_answer("Do you have at least 5 years of experience?", profile) == "No"
+
+
+def test_label_for_a_missing_id_only_when_it_is_the_one_control(browser):
+    from jobbot.apply import SCAN_JS
+    page = browser.new_page()
+    page.set_content("""<div class=entry><label for="_systemfield_location">Location</label>
+      <div><input role=combobox placeholder="Start typing..."></div></div>
+      <div class=pane><label for="_gone">Location</label><input type=file><input type=text placeholder="Other"></div>""")
+    labels = [f["label"] for f in page.evaluate(SCAN_JS)]
+    assert labels[0] == "Location" and "Location" not in labels[1:]
+    page.close()
