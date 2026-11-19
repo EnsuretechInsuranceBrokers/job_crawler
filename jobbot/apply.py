@@ -111,6 +111,10 @@ SCAN_JS = r"""
     const info = el.tagName.toLowerCase() + '[' + type + ']' + (el.getAttribute('role') ? '{' + el.getAttribute('role') + '}' : '')
       + '#' + (el.id || '') + '.' + String(el.className).slice(0, 40);
     if (type === 'radio' || type === 'checkbox') {
+      // Ashby keeps a hidden checkbox inside each Yes/No button pair: the buttons are the question.
+      // Treating it as its own question made a "No" look unanswered and ticked a "Yes" back off.
+      const sib = el.parentElement ? [...el.parentElement.children].filter(x => x.tagName === 'BUTTON' && /^(yes|no)$/i.test(clean(x.innerText))) : [];
+      if (sib.length === 2) continue;
       const lab = labelEl(el);
       if (!shown(el) && !shown(lab)) continue;
       const key = type + ':' + (el.name || tag(el));

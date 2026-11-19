@@ -987,3 +987,15 @@ def test_consent_takes_the_single_agreement_option():
     assert pick_option("consent", [{"text": "I will read the arbitration agreement before submitting"}]) == 0
     assert pick_option("consent", [{"text": "Select..."}, {"text": "I have read and acknowledge the policy"}]) == 1
     assert pick_option("consent", [{"text": "I do not agree"}]) is None
+
+
+def test_hidden_checkbox_in_a_yes_no_pair_is_not_a_question(browser):
+    """Ashby: <div><button>Yes</button><button>No</button><input type=checkbox hidden-ish></div>"""
+    from jobbot.apply import SCAN_JS
+    page = browser.new_page()
+    page.set_content("""<div><label>Are you a former employee? *</label>
+      <div><button class="_option_ _active_x">No</button><button class="_option_">Yes</button>
+      <input type=checkbox style="width:1px;height:1px" required></div></div>""")
+    fields = page.evaluate(SCAN_JS)
+    assert [f["kind"] for f in fields] == ["buttons"] and fields[0]["filled"]
+    page.close()
