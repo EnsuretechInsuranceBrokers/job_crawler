@@ -981,3 +981,9 @@ def test_label_for_a_missing_id_only_when_it_is_the_one_control(browser):
     labels = [f["label"] for f in page.evaluate(SCAN_JS)]
     assert labels[0] == "Location" and "Location" not in labels[1:]
     page.close()
+
+
+def test_consent_takes_the_single_agreement_option():
+    assert pick_option("consent", [{"text": "I will read the arbitration agreement before submitting"}]) == 0
+    assert pick_option("consent", [{"text": "Select..."}, {"text": "I have read and acknowledge the policy"}]) == 1
+    assert pick_option("consent", [{"text": "I do not agree"}]) is None

@@ -390,7 +390,13 @@ def pick_option(answer, options):
     if a == "decline":
         return next((i for i, o in enumerate(options) if DECLINE.search(o["text"])), None)
     if a == "consent":  # internal token: the "I agree" style option
-        return next((i for i, o in enumerate(options) if AGREE.search(o["text"])), None)
+        hit = next((i for i, o in enumerate(options) if AGREE.search(o["text"])), None)
+        if hit is None:
+            # a single real option ("I will read the agreement", "I have read and acknowledge ...") is the agreement
+            real = [i for i, o in enumerate(options) if o["text"].strip() and not re.match(r"^\W*(select|choose|please select)\b", o["text"], re.I)]
+            if len(real) == 1 and not re.search(r"\b(no|not|decline|disagree|do not|don'?t)\b", options[real[0]]["text"], re.I):
+                hit = real[0]
+        return hit
     if a in SYNONYMS and a not in texts and SYNONYMS[a] in texts:
         a = SYNONYMS[a]
     try:
