@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v4
         if: steps.setup.outputs.ready
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.setup.outputs.ready
         with:
           python-version: "3.12"
