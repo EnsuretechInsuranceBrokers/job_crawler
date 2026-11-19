@@ -67,8 +67,11 @@ SCAN_JS = r"""
     let p = el.parentElement;
     for (let i = 0; i < 4 && p; i++, p = p.parentElement) {
       // never borrow a label that belongs to a different control
+      // (a label "for" a wrapper that contains this control - Ashby's date pickers - is its label)
+      const forOther = x => { if (!x.htmlFor || x.htmlFor === el.id) return false;
+        const t = document.getElementById(x.htmlFor); return !!t && t !== el && !t.contains(el); };
       const l = [...p.querySelectorAll('label, legend, [class*="label" i]')].find(x => !x.contains(el) && clean(x.innerText)
-        && !(x.htmlFor && x.htmlFor !== el.id) && !x.querySelector('input, select, textarea'));
+        && !forOther(x) && !x.querySelector('input, select, textarea'));
       if (l) return l;
     }
     return null;
@@ -131,6 +134,8 @@ SCAN_JS = r"""
       f.filled = !!el.value || !!(box && box.querySelector('[class*="single-value" i], [class*="multi-value" i]'));
     } else {
       f.kind = el.tagName === 'TEXTAREA' ? 'textarea' : 'text';
+      if (type === 'date' || /datepicker|input-date|date-input/i.test(String(el.className) + ' ' + (el.parentElement ? el.parentElement.className : '')))
+        f.date = type === 'date' ? 'iso' : 'us';
     }
     out.push(f);
   }
@@ -405,6 +410,11 @@ def pick_option(answer, options):
             return hits[0]
         if hits:
             return None  # ambiguous: do not guess
+    if a in ("no", "none"):
+        # "No" against sentences: "I have never been employed by X" is the one option that says no
+        neg = [i for i, t in enumerate(texts) if re.search(r"\b(never|not|no|none)\b", t) and not re.search(r"\byes\b", t)]
+        if len(neg) == 1:
+            return neg[0]
     # Last resort: one option clearly shares more meaningful words than any other
     # ("Company careers page" -> "Careers Website").
     def words(t):
@@ -413,6 +423,26 @@ def pick_option(answer, options):
     scores = [len(mine & words(t)) for t in texts]
     best = max(scores, default=0)
     return scores.index(best) if best and scores.count(best) == 1 else None
+
+
+def date_answer(answer, today=None):
+    """A calendar date for a date field: an actual date as is, "2 weeks" / "30 days" / "1 month"
+    counted from today, "immediately" as today. Anything else: None (not guessed)."""
+    import datetime
+    today = today or datetime.date.today()
+    a = norm(answer)
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d %B %Y", "%B %d %Y"):
+        try:
+            return datetime.datetime.strptime(answer.strip(), fmt).date()
+        except ValueError:
+            pass
+    if re.search(r"immediate|right away|asap", a):
+        return today
+    m = re.search(r"(\d+)\s*(day|week|month)", a)
+    if not m:
+        return None
+    n, unit = int(m.group(1)), m.group(2)
+    return today + datetime.timedelta(days=n * {"day": 1, "week": 7, "month": 30}[unit])
 
 
 def numeric_answer(answer, label):
@@ -578,6 +608,14 @@ class FormFiller:
         if kind in ("text", "textarea"):
             if norm(answer) in ("decline", "consent"):
                 return False
+            if f.get("date"):
+                when = date_answer(answer)
+                if when is None:
+                    return False
+                box = self.loc(f["jb"])
+                box.fill(when.strftime("%Y-%m-%d" if f["date"] == "iso" else "%m/%d/%Y"), timeout=5000)
+                box.press("Enter")  # closes the picker and commits the typed date
+                return True
             if f.get("info", "").startswith("input[number]"):
                 answer = numeric_answer(answer, f["label"])
                 if answer is None:

@@ -930,3 +930,28 @@ def test_dropdown_tries_every_acceptable_answer_before_typing(browser):
     assert filler._combobox(f, ["I am not a protected veteran", "I am not a veteran", "No"])
     assert page.input_value("#v") == "No military service" and f["chosen"] == "No"
     page.close()
+
+
+def test_date_fields_and_negative_sentence_options():
+    import datetime
+    from jobbot.apply import date_answer
+    t = datetime.date(2026, 11, 19)
+    assert date_answer("2 weeks", t) == datetime.date(2026, 12, 3)
+    assert date_answer("Currently employed; available 2 weeks after an offer", t) == datetime.date(2026, 12, 3)
+    assert date_answer("2026-12-05", t) == datetime.date(2026, 12, 5) and date_answer("soon", t) is None
+    never = [{"text": "I have never been employed by Acme"}, {"text": "I am currently an employee"},
+             {"text": "I was previously a contractor"}]
+    assert pick_option("No", never) == 0
+    assert pick_option("No", [{"text": "Not yet"}, {"text": "Not applicable"}]) is None   # ambiguous: not guessed
+
+
+def test_wrapped_date_picker_gets_its_real_label(browser):
+    """Ashby: the label points at a wrapper div, the input inside has no id."""
+    from jobbot.apply import SCAN_JS
+    page = browser.new_page()
+    page.set_content("""<div class="ashby-application-form-field-entry"><label for="w1">When can you start a new role?</label>
+      <div id="w1"><div class="react-datepicker-wrapper"><div class="react-datepicker__input-container">
+      <input type="text" placeholder="Pick date..." class="ashby-application-form-input-date" required></div></div></div></div>""")
+    f = page.evaluate(SCAN_JS)[0]
+    assert f["label"] == "When can you start a new role?" and f["date"] == "us"
+    page.close()
